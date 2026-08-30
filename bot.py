@@ -15,8 +15,10 @@ if not TOKEN:
     raise RuntimeError("TOKEN environment variable is not set")
 
 os.makedirs(DATA,exist_ok=True)
+
 bot=RubiBot(TOKEN)
 S=requests.Session()
+
 OF=f"{DATA}/offset.txt"
 DF=f"{DATA}/orders.json"
 
@@ -29,12 +31,12 @@ def read(p,d=""):
 
 def write(p,x):
     try:
-        tmp=p+".tmp"
-        with open(tmp,"w",encoding="utf8") as f:
+        q=p+".tmp"
+        with open(q,"w",encoding="utf8") as f:
             f.write(str(x))
-        os.replace(tmp,p)
-    except Exception as e:
-        print("WRITE:",repr(e))
+        os.replace(q,p)
+    except:
+        pass
 
 try:
     ORDERS=json.loads(read(DF,"{}"))
@@ -46,10 +48,10 @@ if not isinstance(ORDERS,dict):
 
 def save():
     try:
-        tmp=DF+".tmp"
-        with open(tmp,"w",encoding="utf8") as f:
+        q=DF+".tmp"
+        with open(q,"w",encoding="utf8") as f:
             json.dump(ORDERS,f,ensure_ascii=False,separators=(",",":"))
-        os.replace(tmp,DF)
+        os.replace(q,DF)
     except Exception as e:
         print("SAVE:",repr(e))
 
@@ -116,15 +118,25 @@ FOLLOWERS=[
 
 def send(uid,text,key=MAIN):
     try:
-        bot.send_message(str(uid),text,chat_keypad=key)
+        bot.send_message(
+            str(uid),
+            text,
+            chat_keypad=key
+        )
     except Exception as e:
         print("SEND:",repr(e))
 
 def start(m):
-    send(m.chat_id,"🛍 فروشگاه روبیکا\n\n👇 انتخاب کنید:")
+    send(
+        m.chat_id,
+        "🛍 فروشگاه روبیکا\n\n👇 انتخاب کنید:"
+    )
 
 def user_orders(uid):
-    return [o for o in ORDERS.values() if str(o.get("chat_id"))==str(uid)]
+    return [
+        o for o in ORDERS.values()
+        if str(o.get("chat_id"))==str(uid)
+    ]
 
 def last(uid):
     a=user_orders(uid)
@@ -132,43 +144,68 @@ def last(uid):
 
 def username(m):
     try:
-        u=getattr(bot.get_chat(str(m.chat_id)),"username",None)
+        u=getattr(
+            bot.get_chat(str(m.chat_id)),
+            "username",
+            None
+        )
         return "@"+str(u).lstrip("@") if u else "ندارد"
     except:
         return "ندارد"
 
 def normalize(t):
     t=t.strip()
+
     if t.startswith("@"):
         u=t[1:]
     else:
         x=re.match(
             r"https?://(?:www\.)?(?:rubika\.ir|web\.rubika\.ir)/([^/?#\s]+)",
-            t,re.I
+            t,
+            re.I
         )
         if not x:
             return None
         u=x.group(1).lstrip("@")
-    return "@"+u if re.fullmatch(r"[A-Za-z0-9_]{3,64}",u) else None
 
-def show_prices(uid,items,prefix,title):
+    return "@"+u if re.fullmatch(
+        r"[A-Za-z0-9_]{3,64}",
+        u
+    ) else None
+
+def show_prices(uid,items,prefix,title,typ):
+    rows=[]
+
+    for x in items:
+        service,price=x.split(" — ",1)
+        text=prefix+x
+        data=f"buy|{typ}|{service}|{price}"
+        rows.append([(text,data)])
+
+    rows.append([
+        ("🔙 خدمات","services"),
+        ("🏠 اصلی","home")
+    ])
+
     send(
         uid,
         title,
-        kb(
-            [[(prefix+x,"buy")] for x in items]+
-            [[("🔙 خدمات","services"),("🏠 اصلی","home")]]
-        )
+        kb(rows)
     )
 
 def create(m,service,price,typ):
     uid=str(m.chat_id)
-    n=max([oid(x) for x in ORDERS.values()]+[1000])+1
+
+    n=max(
+        [oid(x) for x in ORDERS.values()]+[1000]
+    )+1
 
     ORDERS[str(n)]={
         "id":n,
         "chat_id":uid,
-        "sender_id":str(getattr(m,"sender_id","") or uid),
+        "sender_id":str(
+            getattr(m,"sender_id","") or uid
+        ),
         "username":username(m),
         "service":service,
         "type":typ,
@@ -188,7 +225,8 @@ def create(m,service,price,typ):
         uid,
         "📌 آیدی مقصد را ارسال کنید:\n\nمثال: @username",
         kb([
-            [("❌ خروج","cancel"),("🏠 اصلی","home")]
+            [("❌ خروج","cancel")],
+            [("🏠 اصلی","home")]
         ])
     )
 
@@ -222,7 +260,12 @@ def set_target(m,t):
         send(uid,"❌ آیدی نامعتبر است.")
         return
 
-    o.update(target=u,waiting=0,discount_wait=1)
+    o.update(
+        target=u,
+        waiting=0,
+        discount_wait=1
+    )
+
     save()
 
     send(
@@ -253,6 +296,7 @@ def discount(m,t):
         return
 
     p=num(o["price"])
+
     o.update(
         discount=p*20//100,
         final=p*80//100,
@@ -278,12 +322,18 @@ def receipt(m):
 
     try:
         f=getattr(m,"file",None)
-        fid=getattr(f,"id",None) or getattr(f,"file_id",None)
+
+        fid=(
+            getattr(f,"id",None)
+            or getattr(f,"file_id",None)
+        )
 
         if not fid:
             raise Exception("NO_FILE")
 
-        data=bot.download_file(bot.get_file(fid))
+        data=bot.download_file(
+            bot.get_file(fid)
+        )
 
         if not data:
             raise Exception("NO_DATA")
@@ -301,7 +351,11 @@ def receipt(m):
         )
 
         with open(path,"rb") as f:
-            bot.send_photo(ADMIN,f,text=text)
+            bot.send_photo(
+                ADMIN,
+                f,
+                text=text
+            )
 
         o["receipt"]=1
         save()
@@ -313,7 +367,10 @@ def receipt(m):
 
     except Exception as e:
         print("RECEIPT:",repr(e))
-        send(uid,f"❌ ارسال رسید ناموفق بود.\n{SUPPORT}")
+        send(
+            uid,
+            f"❌ ارسال رسید ناموفق بود.\n{SUPPORT}"
+        )
 
     finally:
         try:
@@ -352,13 +409,20 @@ def admin_buttons(o):
 
 def admin_list(status):
     a=sorted(
-        [o for o in ORDERS.values() if o.get("status")==status],
+        [
+            o for o in ORDERS.values()
+            if o.get("status")==status
+        ],
         key=oid,
         reverse=True
     )
 
     if not a:
-        send(ADMIN,"📭 سفارشی نیست.",ADMIN_KB)
+        send(
+            ADMIN,
+            "📭 سفارشی نیست.",
+            ADMIN_KB
+        )
         return
 
     for o in a[:30]:
@@ -376,12 +440,19 @@ def admin_list(status):
 
 def change(n,status):
     o=next(
-        (x for x in ORDERS.values() if str(x.get("id"))==str(n)),
+        (
+            x for x in ORDERS.values()
+            if str(x.get("id"))==str(n)
+        ),
         None
     )
 
     if not o:
-        send(ADMIN,f"❌ سفارش #{n} پیدا نشد.",ADMIN_KB)
+        send(
+            ADMIN,
+            f"❌ سفارش #{n} پیدا نشد.",
+            ADMIN_KB
+        )
         return
 
     o.update(
@@ -405,7 +476,11 @@ def change(n,status):
 
 def admin_cmd(t):
     if t=="/admin":
-        send(ADMIN,"⚙️ پنل مدیریت",ADMIN_KB)
+        send(
+            ADMIN,
+            "⚙️ پنل مدیریت",
+            ADMIN_KB
+        )
         return True
 
     if t in STATUS:
@@ -422,7 +497,13 @@ def admin_cmd(t):
             del ORDERS[k]
 
         save()
-        send(ADMIN,f"🗑 {len(a)} سفارش حذف شد.",ADMIN_KB)
+
+        send(
+            ADMIN,
+            f"🗑 {len(a)} سفارش حذف شد.",
+            ADMIN_KB
+        )
+
         return True
 
     x=re.match(
@@ -451,14 +532,26 @@ def handle(m):
         return
 
     uid=str(m.chat_id)
-    sid=str(getattr(m,"sender_id","") or "")
-    t=(getattr(m,"text","") or "").strip()
+    sid=str(
+        getattr(m,"sender_id","") or ""
+    )
+    t=(
+        getattr(m,"text","")
+        or ""
+    ).strip()
 
     if t=="/admin":
         if uid==ADMIN or sid==ADMIN:
-            send(uid,"⚙️ پنل مدیریت",ADMIN_KB)
+            send(
+                uid,
+                "⚙️ پنل مدیریت",
+                ADMIN_KB
+            )
         else:
-            send(uid,"❌ شما دسترسی ادمین ندارید.")
+            send(
+                uid,
+                "❌ شما دسترسی ادمین ندارید."
+            )
         return
 
     if uid==ADMIN or sid==ADMIN:
@@ -485,7 +578,11 @@ def handle(m):
         return
 
     if t=="🛍 خدمات":
-        send(uid,"🛍 خدمات روبیکا",SERV)
+        send(
+            uid,
+            "🛍 خدمات روبیکا",
+            SERV
+        )
         return
 
     if t=="ℹ️ توضیحات":
@@ -500,17 +597,102 @@ def handle(m):
         return
 
     if t=="🛒 خرید":
-        send(uid,"🛍 خدمات",SERV)
+        send(
+            uid,
+            "🛍 خدمات",
+            SERV
+        )
         return
 
-    MENU={
-        "📣 کانال":(CHANNEL,"📣 ","📣 تعرفه کانال"),
-        "👥 گروه":(CHANNEL,"👥 ","👥 تعرفه گروه"),
-        "⭐ فالور":(FOLLOWERS,"⭐ ","⭐ تعرفه فالور")
-    }
+    if t=="📣 کانال":
+        show_prices(
+            uid,
+            CHANNEL,
+            "📣 ",
+            "📣 تعرفه کانال",
+            "کانال"
+        )
+        return
 
-    if t in MENU:
-        show_prices(uid,*MENU[t])
+    if t=="👥 گروه":
+        show_prices(
+            uid,
+            CHANNEL,
+            "👥 ",
+            "👥 تعرفه گروه",
+            "گروه"
+        )
+        return
+
+    if t=="⭐ فالور":
+        show_prices(
+            uid,
+            FOLLOWERS,
+            "⭐ ",
+            "⭐ تعرفه فالور",
+            "روبینو"
+        )
+        return
+
+    buy=re.match(
+        r"^buy\|([^|]+)\|([^|]+)\|(.+)$",
+        t
+    )
+
+    if buy:
+        typ,service,price=buy.groups()
+        create(
+            m,
+            service,
+            price,
+            typ
+        )
+        return
+
+    if t.startswith(("📣 ","👥 ","⭐ ")) and " — " in t:
+        for p,typ in [
+            ("📣 ","کانال"),
+            ("👥 ","گروه"),
+            ("⭐ ","روبینو")
+        ]:
+            if t.startswith(p):
+                service,price=t[len(p):].split(
+                    " — ",
+                    1
+                )
+                create(
+                    m,
+                    service,
+                    price,
+                    typ
+                )
+                return
+
+    o=last(uid)
+
+    if t=="❌ ندارم" and o and o.get("discount_wait"):
+        o.update(
+            discount_wait=0,
+            final=num(o["price"])
+        )
+        save()
+        payment(uid,o)
+        return
+
+    if (
+        getattr(m,"file",None)
+        or getattr(m,"photo",None)
+        or getattr(m,"image",None)
+    ):
+        receipt(m)
+        return
+
+    if o and o.get("discount_wait"):
+        discount(m,t)
+        return
+
+    if o and o.get("waiting"):
+        set_target(m,t)
         return
 
     if t=="📦 پیگیری":
@@ -570,44 +752,10 @@ def handle(m):
         start(m)
         return
 
-    o=last(uid)
-
-    if t=="❌ ندارم" and o and o.get("discount_wait"):
-        o.update(
-            discount_wait=0,
-            final=num(o["price"])
-        )
-        save()
-        payment(uid,o)
-        return
-
-    if (
-        getattr(m,"file",None)
-        or getattr(m,"photo",None)
-        or getattr(m,"image",None)
-    ):
-        receipt(m)
-        return
-
-    if o and o.get("discount_wait"):
-        discount(m,t)
-        return
-
-    if o and o.get("waiting"):
-        set_target(m,t)
-        return
-
-    for p,typ in [
-        ("📣 ","کانال"),
-        ("👥 ","گروه"),
-        ("⭐ ","روبینو")
-    ]:
-        if t.startswith(p) and " — " in t:
-            service,price=t[len(p):].split(" — ",1)
-            create(m,service,price,typ)
-            return
-
-    send(uid,"👇 از منو انتخاب کنید.")
+    send(
+        uid,
+        "👇 از منو انتخاب کنید."
+    )
 
 def get_updates(offset=""):
     while True:
@@ -682,7 +830,6 @@ def web():
                 ("0.0.0.0",PORT),
                 Health
             ).serve_forever()
-
         except Exception as e:
             print("WEB:",repr(e))
             time.sleep(5)
