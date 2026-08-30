@@ -3,10 +3,11 @@ import requests,os,time,json,re
 from http.server import BaseHTTPRequestHandler,HTTPServer
 import threading
 
+# Render HTTP Server
 class HealthHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
-        self.send_header("Content-Type","text/plain")
+        self.send_header("Content-Type","text/plain; charset=utf-8")
         self.end_headers()
         self.wfile.write(b"Bot is running")
 
@@ -14,15 +15,20 @@ class HealthHandler(BaseHTTPRequestHandler):
         pass
 
 def start_http_server():
-    port=int(os.getenv("PORT","10000"))
-    HTTPServer(("0.0.0.0",port),HealthHandler).serve_forever()
+    try:
+        port=int(os.getenv("PORT","10000"))
+        HTTPServer(("0.0.0.0",port),HealthHandler).serve_forever()
+    except Exception as e:
+        print("HTTP:",repr(e))
 
 threading.Thread(target=start_http_server,daemon=True).start()
 
-TOKEN=os.getenv("TOKEN","CDABFH0UFMCTTJJSAXMWDOTDORNFGAFFIQYZXZYJLBRVPVFJZTDXGXLSQLYQVMIU")
+TOKEN="CDABFH0UFMCTTJJSAXMWDOTDORNFGAFFIQYZXZYJLBRVPVFJZTDXGXLSQLYQVMIU"
 CARD="6219861932569709"
 SUPPORT="@Poriysmeii"
 CODE="@PoriyBot"
+
+# مسیر قابل نوشتن در Render
 BASE=os.path.dirname(os.path.abspath(__file__))
 
 AF=f"{BASE}/admin_id.txt"
@@ -30,6 +36,7 @@ OF=f"{BASE}/rubika_offset.txt"
 DF=f"{BASE}/orders.json"
 
 os.makedirs(BASE,exist_ok=True)
+
 bot=RubiBot(TOKEN)
 
 def read(p,d=""):
@@ -61,7 +68,12 @@ except:
 
 def num(x):
     try:
-        return int(str(x).replace(",","").replace(".","").replace(" تومان",""))
+        return int(
+            str(x)
+            .replace(",","")
+            .replace(".","")
+            .replace(" تومان","")
+        )
     except:
         return 0
 
@@ -76,11 +88,15 @@ def oid(o):
 
 def kb(rows):
     k=types.ChatKeypad(resize_keyboard=True)
+
     for row in rows:
         r=types.KeypadRow()
+
         for text,data in row:
             r.add(types.KeypadSimpleButton(text,data))
+
         k.add(r)
+
     return k
 
 MAIN=kb([
@@ -169,8 +185,14 @@ def start(m):
 
 def get_user(m):
     try:
-        u=getattr(bot.get_chat(str(m.chat_id)),"username",None)
+        u=getattr(
+            bot.get_chat(str(m.chat_id)),
+            "username",
+            None
+        )
+
         return "@"+str(u).lstrip("@") if u else "ندارد"
+
     except:
         return "ندارد"
 
@@ -179,16 +201,24 @@ def normalize(t):
 
     if t.startswith("@"):
         u=t[1:]
+
     else:
         x=re.match(
             r"^https?://(?:www\.)?(?:rubika\.ir|web\.rubika\.ir)/([^/?#\s]+)",
-            t,re.I
+            t,
+            re.I
         )
+
         if not x:
             return None
+
         u=x.group(1).lstrip("@")
 
-    return "@"+u if re.fullmatch(r"[A-Za-z0-9_]{3,64}",u) else None
+    return (
+        "@"+u
+        if re.fullmatch(r"[A-Za-z0-9_]{3,64}",u)
+        else None
+    )
 
 def prices(items,prefix):
     return kb(
@@ -208,13 +238,19 @@ def user_order(uid):
 
 def new_order(m,service,price,typ):
     uid=str(m.chat_id)
-    n=max([oid(x) for x in ORDERS.values()]+[1000])+1
+
+    n=max(
+        [oid(x) for x in ORDERS.values()]+[1000]
+    )+1
+
     key=str(n)
 
     ORDERS[key]={
         "id":key,
         "chat_id":uid,
-        "sender_id":str(getattr(m,"sender_id","") or uid),
+        "sender_id":str(
+            getattr(m,"sender_id","") or uid
+        ),
         "username":get_user(m),
         "service":service,
         "type":typ,
@@ -234,7 +270,10 @@ def new_order(m,service,price,typ):
         "کانال":"📌 آیدی کانال را ارسال کنید",
         "گروه":"📌 آیدی گروه را ارسال کنید",
         "روبینو":"📌 آیدی پیج را وارد کنید"
-    }.get(typ,"📌 آیدی مقصد را ارسال کنید")
+    }.get(
+        typ,
+        "📌 آیدی مقصد را ارسال کنید"
+    )
 
     bot.send_message(
         uid,
@@ -411,12 +450,18 @@ def receipt(m):
 
     try:
         f=getattr(m,"file",None)
-        fid=getattr(f,"id",None) or getattr(f,"file_id",None)
+
+        fid=(
+            getattr(f,"id",None) or
+            getattr(f,"file_id",None)
+        )
 
         if not fid:
             raise Exception("NO FILE")
 
-        data=bot.download_file(bot.get_file(fid))
+        data=bot.download_file(
+            bot.get_file(fid)
+        )
 
         if not data:
             raise Exception("NO DATA")
@@ -450,7 +495,11 @@ def receipt(m):
 📸 رسید دریافت شد."""
 
         with open(path,"rb") as f:
-            bot.send_photo(ADMIN,f,text=text)
+            bot.send_photo(
+                ADMIN,
+                f,
+                text=text
+            )
 
         try:
             os.remove(path)
@@ -475,6 +524,7 @@ def receipt(m):
 
     except Exception as e:
         print("RECEIPT:",repr(e))
+
         bot.send_message(
             uid,
             f"""❌ ارسال رسید انجام نشد.
@@ -555,6 +605,7 @@ def admin_list(status):
     )
 
     for o in arr[:30]:
+
         text=f"""📦 سفارش #{o["id"]}
 
 🛍 خدمت:
@@ -665,6 +716,7 @@ def change_status(n,status):
             str(o["chat_id"]),
             status_message(o,status)
         )
+
         o["status_sent"]=1
 
     except Exception as e:
@@ -803,10 +855,14 @@ def admin_cmd(t):
         (r"^/complete\s+(\d+)$","تکمیل شد"),
         (r"^/cancel_order\s+(\d+)$","لغو شد")
     ]:
+
         m=re.match(pattern,t)
 
         if m:
-            admin_operation(m.group(1),status)
+            admin_operation(
+                m.group(1),
+                status
+            )
             return True
 
     return False
@@ -840,7 +896,10 @@ def handle(m):
         keys=[
             k for k,o in ORDERS.items()
             if str(o.get("chat_id"))==uid and
-            (o.get("waiting") or o.get("discount_wait"))
+            (
+                o.get("waiting") or
+                o.get("discount_wait")
+            )
         ]
 
         for k in keys:
@@ -895,7 +954,10 @@ def handle(m):
         bot.send_message(
             uid,
             "📣 تعرفه افزایش کانال 👇",
-            chat_keypad=prices(CHANNEL,"📣 ")
+            chat_keypad=prices(
+                CHANNEL,
+                "📣 "
+            )
         )
         return
 
@@ -904,7 +966,10 @@ def handle(m):
         bot.send_message(
             uid,
             "👥 تعرفه افزایش گروه 👇",
-            chat_keypad=prices(GROUP,"👥 ")
+            chat_keypad=prices(
+                GROUP,
+                "👥 "
+            )
         )
         return
 
@@ -913,7 +978,10 @@ def handle(m):
         bot.send_message(
             uid,
             "⭐ تعرفه افزایش فالور 👇",
-            chat_keypad=prices(FOLLOWERS,"⭐ ")
+            chat_keypad=prices(
+                FOLLOWERS,
+                "⭐ "
+            )
         )
         return
 
@@ -1033,7 +1101,7 @@ def handle(m):
 
     bot.send_message(
         uid,
-        "از دکمه‌های منو استفاده کنید 👇",
+            "از دکمه‌های منو استفاده کنید 👇",
         chat_keypad=MAIN
     )
 
