@@ -1,5 +1,23 @@
 from rubibot import RubiBot,types,updates,exceptions
 import requests,os,time,json,re
+from http.server import BaseHTTPRequestHandler,HTTPServer
+import threading
+
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-Type","text/plain")
+        self.end_headers()
+        self.wfile.write(b"Bot is running")
+
+    def log_message(self,*args):
+        pass
+
+def start_http_server():
+    port=int(os.getenv("PORT","10000"))
+    HTTPServer(("0.0.0.0",port),HealthHandler).serve_forever()
+
+threading.Thread(target=start_http_server,daemon=True).start()
 
 TOKEN=os.getenv("TOKEN","CDABFH0UFMCTTJJSAXMWDOTDORNFGAFFIQYZXZYJLBRVPVFJZTDXGXLSQLYQVMIU")
 CARD="6219861932569709"
@@ -24,7 +42,8 @@ def read(p,d=""):
 def save(p=None,v=None):
     try:
         if p:
-            with open(p,"w",encoding="utf8") as f:f.write(str(v))
+            with open(p,"w",encoding="utf8") as f:
+                f.write(str(v))
         else:
             with open(DF,"w",encoding="utf8") as f:
                 json.dump(ORDERS,f,ensure_ascii=False)
@@ -35,19 +54,25 @@ ADMIN=read(AF)
 
 try:
     ORDERS=json.loads(read(DF,"{}"))
-    if not isinstance(ORDERS,dict): ORDERS={}
+    if not isinstance(ORDERS,dict):
+        ORDERS={}
 except:
     ORDERS={}
 
 def num(x):
-    try:return int(str(x).replace(",","").replace(".","").replace(" تومان",""))
-    except:return 0
+    try:
+        return int(str(x).replace(",","").replace(".","").replace(" تومان",""))
+    except:
+        return 0
 
-def money(x):return f"{num(x):,}"
+def money(x):
+    return f"{num(x):,}"
 
 def oid(o):
-    try:return int(o.get("id",0))
-    except:return 0
+    try:
+        return int(o.get("id",0))
+    except:
+        return 0
 
 def kb(rows):
     k=types.ChatKeypad(resize_keyboard=True)
@@ -123,7 +148,9 @@ DESC="""╔════════════════════╗
 ━━━━━━━━━━━━━━━━━━"""
 
 def start(m):
-    bot.send_message(str(m.chat_id),"""╔════════════════════╗
+    bot.send_message(
+        str(m.chat_id),
+        """╔════════════════════╗
        🛍 فروشگاه روبیکا
 ╚════════════════════╝
 
@@ -136,7 +163,9 @@ def start(m):
 📦 پیگیری سفارش
 🧾 سفارش‌های من
 
-👇 انتخاب کنید:""",chat_keypad=MAIN)
+👇 انتخاب کنید:""",
+        chat_keypad=MAIN
+    )
 
 def get_user(m):
     try:
@@ -153,8 +182,10 @@ def normalize(t):
     else:
         x=re.match(
             r"^https?://(?:www\.)?(?:rubika\.ir|web\.rubika\.ir)/([^/?#\s]+)",
-            t,re.I)
-        if not x:return None
+            t,re.I
+        )
+        if not x:
+            return None
         u=x.group(1).lstrip("@")
 
     return "@"+u if re.fullmatch(r"[A-Za-z0-9_]{3,64}",u) else None
@@ -166,8 +197,10 @@ def prices(items,prefix):
     )
 
 def user_orders(uid):
-    return [o for o in ORDERS.values()
-            if str(o.get("chat_id"))==str(uid)]
+    return [
+        o for o in ORDERS.values()
+        if str(o.get("chat_id"))==str(uid)
+    ]
 
 def user_order(uid):
     a=user_orders(uid)
@@ -194,6 +227,7 @@ def new_order(m,service,price,typ):
         "discount_wait":0,
         "receipt":0
     }
+
     save()
 
     title={
@@ -202,7 +236,9 @@ def new_order(m,service,price,typ):
         "روبینو":"📌 آیدی پیج را وارد کنید"
     }.get(typ,"📌 آیدی مقصد را ارسال کنید")
 
-    bot.send_message(uid,f"""╔════════════════════╗
+    bot.send_message(
+        uid,
+        f"""╔════════════════════╗
         🛍 ثبت سفارش
 ╚════════════════════╝
 
@@ -215,10 +251,13 @@ def new_order(m,service,price,typ):
         chat_keypad=kb([
             [("❌ خروج","cancel")],
             [("🏠 منوی اصلی","home")]
-        ]))
+        ])
+    )
 
 def ask_discount(uid):
-    bot.send_message(uid,"""╔════════════════════╗
+    bot.send_message(
+        uid,
+        """╔════════════════════╗
         🎁 کد تخفیف
 ╚════════════════════╝
 
@@ -230,20 +269,27 @@ def ask_discount(uid):
         chat_keypad=kb([
             [("❌ کد تخفیف ندارم","no_discount")],
             [("❌ خروج","cancel")]
-        ]))
+        ])
+    )
 
 def set_target(m,text):
     uid=str(m.chat_id)
     o=user_order(uid)
-    if not o:return
+
+    if not o:
+        return
 
     u=normalize(text)
 
     if not u:
-        bot.send_message(uid,"""❌ آیدی نامعتبر است.
+        bot.send_message(
+            uid,
+            """❌ آیدی نامعتبر است.
 
 📌 مثال صحیح:
-@username""",chat_keypad=MAIN)
+@username""",
+            chat_keypad=MAIN
+        )
         return
 
     o.update(
@@ -252,11 +298,14 @@ def set_target(m,text):
         discount_wait=1,
         username=get_user(m)
     )
+
     save()
     ask_discount(uid)
 
 def payment(uid,o):
-    bot.send_message(uid,f"""╔════════════════════╗
+    bot.send_message(
+        uid,
+        f"""╔════════════════════╗
        💳 پرداخت سفارش
 ╚════════════════════╝
 
@@ -284,19 +333,25 @@ def payment(uid,o):
 ━━━━━━━━━━━━━━━━━━
 
 📸 بعد از واریز عکس رسید را همینجا ارسال کنید.""",
-        chat_keypad=MAIN)
+        chat_keypad=MAIN
+    )
 
 def discount(m,text):
     uid=str(m.chat_id)
     o=user_order(uid)
-    if not o:return
+
+    if not o:
+        return
 
     if text.strip().lower()!=CODE.lower():
-        bot.send_message(uid,"❌ کد تخفیف نامعتبر است.",
+        bot.send_message(
+            uid,
+            "❌ کد تخفیف نامعتبر است.",
             chat_keypad=kb([
                 [("❌ کد تخفیف ندارم","no_discount")],
                 [("❌ خروج","cancel")]
-            ]))
+            ])
+        )
         return
 
     x=num(o["price"])
@@ -308,9 +363,12 @@ def discount(m,text):
         discount_wait=0,
         code=CODE
     )
+
     save()
 
-    bot.send_message(uid,f"""🎉 کد تخفیف تأیید شد!
+    bot.send_message(
+        uid,
+        f"""🎉 کد تخفیف تأیید شد!
 
 💰 مبلغ اصلی:
 {money(x)} تومان
@@ -319,7 +377,8 @@ def discount(m,text):
 {money(d)} تومان
 
 💳 مبلغ نهایی:
-{money(x-d)} تومان""")
+{money(x-d)} تومان"""
+    )
 
     payment(uid,o)
 
@@ -335,11 +394,19 @@ def receipt(m):
     o=user_order(uid)
 
     if not o:
-        bot.send_message(uid,"❌ سفارش فعالی ندارید.",chat_keypad=MAIN)
+        bot.send_message(
+            uid,
+            "❌ سفارش فعالی ندارید.",
+            chat_keypad=MAIN
+        )
         return
 
     if o.get("receipt"):
-        bot.send_message(uid,"⚠️ رسید قبلاً دریافت شده.",chat_keypad=MAIN)
+        bot.send_message(
+            uid,
+            "⚠️ رسید قبلاً دریافت شده.",
+            chat_keypad=MAIN
+        )
         return
 
     try:
@@ -393,7 +460,9 @@ def receipt(m):
         o["receipt"]=1
         save()
 
-        bot.send_message(uid,"""╔════════════════════╗
+        bot.send_message(
+            uid,
+            """╔════════════════════╗
         ✅ رسید دریافت شد
 ╚════════════════════╝
 
@@ -401,14 +470,19 @@ def receipt(m):
 در انتظار بررسی
 
 ⏳ پس از بررسی وضعیت سفارش اعلام می‌شود.""",
-            chat_keypad=MAIN)
+            chat_keypad=MAIN
+        )
 
     except Exception as e:
         print("RECEIPT:",repr(e))
-        bot.send_message(uid,f"""❌ ارسال رسید انجام نشد.
+        bot.send_message(
+            uid,
+            f"""❌ ارسال رسید انجام نشد.
 
 📞 پشتیبانی:
-{SUPPORT}""",chat_keypad=MAIN)
+{SUPPORT}""",
+            chat_keypad=MAIN
+        )
 
 def my_orders(uid,status=None):
     arr=[
@@ -422,7 +496,7 @@ def my_orders(uid,status=None):
     arr.sort(key=oid,reverse=True)
 
     return "\n".join(
-f"""📦 سفارش #{o["id"]}
+        f"""📦 سفارش #{o["id"]}
 🛍 {o["service"]}
 📌 {o["type"]}
 🔗 {o["target"]}
@@ -439,21 +513,29 @@ def admin_buttons(o):
 
     if s=="در انتظار بررسی":
         return kb([
-            [(f"🔵 شروع #{n}","start"),
-             (f"🟢 تکمیل #{n}","done")],
+            [
+                (f"🔵 شروع #{n}","start"),
+                (f"🟢 تکمیل #{n}","done")
+            ],
             [(f"🔴 لغو #{n}","cancel")]
         ])
 
     if s=="در حال انجام":
         return kb([
-            [(f"🟢 تکمیل #{n}","done"),
-             (f"🔴 لغو #{n}","cancel")]
+            [
+                (f"🟢 تکمیل #{n}","done"),
+                (f"🔴 لغو #{n}","cancel")
+            ]
         ])
 
     return ADMIN_KB
 
 def admin_list(status):
-    arr=[o for o in ORDERS.values() if o.get("status")==status]
+    arr=[
+        o for o in ORDERS.values()
+        if o.get("status")==status
+    ]
+
     arr.sort(key=oid,reverse=True)
 
     if not arr:
@@ -507,9 +589,12 @@ def admin_list(status):
 
 def find_order(n):
     n=str(n).strip().replace("#","")
+
     return next(
-        (o for o in ORDERS.values()
-         if str(o.get("id"))==n),
+        (
+            o for o in ORDERS.values()
+            if str(o.get("id"))==n
+        ),
         None
     )
 
@@ -572,16 +657,16 @@ def change_status(n,status):
         waiting=0,
         discount_wait=0
     )
+
     save()
 
-    # عمداً بدون chat_keypad تا خطای invalid inputs
-    # هنگام ارسال وضعیت مشتری ایجاد نشود.
     try:
         bot.send_message(
             str(o["chat_id"]),
             status_message(o,status)
         )
         o["status_sent"]=1
+
     except Exception as e:
         o["status_sent"]=0
         print("USER STATUS:",repr(e))
@@ -606,13 +691,16 @@ def admin_operation(n,status):
         "لغو شد":"🔴"
     }.get(status,"📊")
 
-    sent="✅ پیام وضعیت برای مشتری ارسال شد." \
-        if o.get("status_sent") else \
+    sent=(
+        "✅ پیام وضعیت برای مشتری ارسال شد."
+        if o.get("status_sent")
+        else
         "⚠️ وضعیت ذخیره شد ولی ارسال پیام به مشتری ناموفق بود."
+    )
 
     bot.send_message(
         ADMIN,
-f"""╔════════════════════╗
+        f"""╔════════════════════╗
       {icon} عملیات انجام شد
 ╚════════════════════╝
 
@@ -637,7 +725,7 @@ f"""╔════════════════════╗
 def admin_panel():
     bot.send_message(
         ADMIN,
-"""╔════════════════════╗
+        """╔════════════════════╗
         ⚙️ پنل مدیریت
 ╚════════════════════╝
 
@@ -665,6 +753,7 @@ def admin_cmd(t):
         return True
 
     if t=="🗑 حذف همه لغوشده‌ها":
+
         keys=[
             k for k,v in ORDERS.items()
             if v.get("status")=="لغو شد"
@@ -677,7 +766,7 @@ def admin_cmd(t):
 
         bot.send_message(
             ADMIN,
-f"""╔════════════════════╗
+            f"""╔════════════════════╗
         🗑 حذف لغوشده‌ها
 ╚════════════════════╝
 
@@ -689,6 +778,7 @@ f"""╔════════════════════╗
 📋 پنل مدیریت:""",
             chat_keypad=ADMIN_KB
         )
+
         return True
 
     m=re.match(
@@ -708,7 +798,6 @@ f"""╔════════════════════╗
         admin_operation(n,status)
         return True
 
-    # دستورات قدیمی
     for pattern,status in [
         (r"^/start_work\s+(\d+)$","در حال انجام"),
         (r"^/complete\s+(\d+)$","تکمیل شد"),
@@ -730,13 +819,11 @@ def handle(m):
     uid=str(m.chat_id)
     t=(getattr(m,"text","") or "").strip()
 
-    # ادمین
     if uid==str(ADMIN):
 
         if admin_cmd(t):
             return
 
-    # کاربر عادی
     if t=="/admin":
         bot.send_message(
             uid,
@@ -772,7 +859,7 @@ def handle(m):
 
         bot.send_message(
             uid,
-"""🔒 قبل از خرید لطفاً توضیحات خدمات را مطالعه کنید.
+            """🔒 قبل از خرید لطفاً توضیحات خدمات را مطالعه کنید.
 
 ℹ️ ابتدا توضیحات خدمات را بخوانید 👇""",
             chat_keypad=kb([
@@ -854,7 +941,7 @@ def handle(m):
 
         bot.send_message(
             uid,
-f"""📜 قوانین ثبت سفارش
+            f"""📜 قوانین ثبت سفارش
 
 1️⃣ پس از ثبت سفارش امکان لغو یا تغییر نیست.
 2️⃣ آیدی صحیح مقصد را ارسال کنید.
@@ -872,7 +959,7 @@ f"""📜 قوانین ثبت سفارش
 
         bot.send_message(
             uid,
-f"""📞 پشتیبانی
+            f"""📞 پشتیبانی
 
 👤 آیدی:
 {SUPPORT}""",
