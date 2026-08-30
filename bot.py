@@ -31,10 +31,10 @@ def read(p,d=""):
 
 def write(p,x):
     try:
-        t=p+".tmp"
-        with open(t,"w",encoding="utf-8") as f:
+        q=p+".tmp"
+        with open(q,"w",encoding="utf-8") as f:
             f.write(str(x))
-        os.replace(t,p)
+        os.replace(q,p)
     except:
         pass
 
@@ -47,16 +47,26 @@ except:
 
 def save():
     try:
-        t=DF+".tmp"
-        with open(t,"w",encoding="utf-8") as f:
-            json.dump(ORDERS,f,ensure_ascii=False,separators=(",",":"))
-        os.replace(t,DF)
+        q=DF+".tmp"
+        with open(q,"w",encoding="utf-8") as f:
+            json.dump(
+                ORDERS,
+                f,
+                ensure_ascii=False,
+                separators=(",",":")
+            )
+        os.replace(q,DF)
     except:
         pass
 
 def num(x):
     try:
-        return int(str(x).replace(",","").replace(".","").replace(" تومان",""))
+        return int(
+            str(x)
+            .replace(",","")
+            .replace(".","")
+            .replace(" تومان","")
+        )
     except:
         return 0
 
@@ -71,11 +81,20 @@ def oid(o):
 
 def kb(rows):
     k=types.ChatKeypad(resize_keyboard=True)
+
     for row in rows:
         r=types.KeypadRow()
+
         for text,data in row:
-            r.add(types.KeypadSimpleButton(text,data))
+            r.add(
+                types.KeypadSimpleButton(
+                    text,
+                    data
+                )
+            )
+
         k.add(r)
+
     return k
 
 MAIN=kb([
@@ -141,7 +160,7 @@ def last(uid):
     a=user_orders(uid)
     return max(a,key=oid) if a else None
 
-def username(m):
+def get_username(m):
     try:
         u=getattr(
             bot.get_chat(str(m.chat_id)),
@@ -169,18 +188,19 @@ def normalize(t):
         re.I
     )
 
-    return "@"+m.group(1) if m else None
+    if m:
+        return "@"+m.group(1)
 
-def show_prices(uid,items,prefix,title,typ):
+    return None
+
+def price_keyboard(items,prefix,typ):
     rows=[]
 
     for x in items:
-        service,price=x.split(" — ",1)
-
         rows.append([
             (
                 prefix+x,
-                f"buy|{typ}|{service}|{price}"
+                "price"
             )
         ])
 
@@ -189,9 +209,41 @@ def show_prices(uid,items,prefix,title,typ):
         ("🏠 اصلی","home")
     ])
 
-    send(uid,title,kb(rows))
+    return kb(rows)
+
+def show_prices(uid,items,prefix,title,typ):
+    send(
+        uid,
+        title,
+        price_keyboard(
+            items,
+            prefix,
+            typ
+        )
+    )
+
+def find_price(t):
+
+    for typ,items,prefix in [
+        ("کانال",CHANNEL,"📣 "),
+        ("گروه",CHANNEL,"👥 "),
+        ("روبینو",FOLLOWERS,"⭐ ")
+    ]:
+
+        for item in items:
+
+            if t==prefix+item:
+                service,price=item.split(
+                    " — ",
+                    1
+                )
+
+                return typ,service,price
+
+    return None
 
 def create(m,service,price,typ):
+
     uid=str(m.chat_id)
 
     n=max(
@@ -204,7 +256,7 @@ def create(m,service,price,typ):
         "sender_id":str(
             getattr(m,"sender_id","") or uid
         ),
-        "username":username(m),
+        "username":get_username(m),
         "service":service,
         "type":typ,
         "price":price,
@@ -224,7 +276,9 @@ def create(m,service,price,typ):
         "📌 یوزرنیم مقصد را ارسال کنید.\n\n"
         "کانال، پیج یا گروه:\n"
         "@username\n\n"
-        "مثال:\n@Poriysmeii",
+        "مثال:\n"
+        "@Poriysmeii\n\n"
+        "یا لینک روبیکا را ارسال کنید.",
         kb([
             [("❌ خروج","cancel")],
             [("🏠 اصلی","home")]
@@ -232,6 +286,7 @@ def create(m,service,price,typ):
     )
 
 def payment(uid,o):
+
     send(
         uid,
         f"""💳 پرداخت سفارش #{o["id"]}
@@ -249,6 +304,7 @@ def payment(uid,o):
     )
 
 def set_target(m,t):
+
     uid=str(m.chat_id)
     o=last(uid)
 
@@ -258,19 +314,23 @@ def set_target(m,t):
     u=normalize(t)
 
     if not u:
+
         send(
             uid,
             "❌ یوزرنیم نامعتبر است.\n\n"
-            "به این شکل ارسال کنید:\n"
-            "@username"
+            "یوزرنیم را به این شکل ارسال کنید:\n"
+            "@username\n\n"
+            "مثال:\n"
+            "@Poriysmeii"
         )
+
         return
 
-    o.update(
-        target=u,
-        waiting=0,
-        discount_wait=1
-    )
+    o.update({
+        "target":u,
+        "waiting":0,
+        "discount_wait":1
+    })
 
     save()
 
@@ -285,6 +345,7 @@ def set_target(m,t):
     )
 
 def discount(m,t):
+
     uid=str(m.chat_id)
     o=last(uid)
 
@@ -292,6 +353,7 @@ def discount(m,t):
         return
 
     if t.strip().lower()!=CODE.lower():
+
         send(
             uid,
             "❌ کد تخفیف نامعتبر است.",
@@ -300,21 +362,23 @@ def discount(m,t):
                 [("❌ خروج","cancel")]
             ])
         )
+
         return
 
     p=num(o["price"])
     d=p*20//100
 
-    o.update(
-        discount=d,
-        final=p-d,
-        discount_wait=0
-    )
+    o.update({
+        "discount":d,
+        "final":p-d,
+        "discount_wait":0
+    })
 
     save()
     payment(uid,o)
 
 def receipt(m):
+
     uid=str(m.chat_id)
     o=last(uid)
 
@@ -329,6 +393,7 @@ def receipt(m):
     path=f"{DATA}/r{o['id']}.jpg"
 
     try:
+
         f=getattr(m,"file",None)
 
         fid=(
@@ -375,13 +440,16 @@ def receipt(m):
         )
 
     except Exception as e:
+
         print("RECEIPT:",repr(e))
+
         send(
             uid,
             f"❌ ارسال رسید ناموفق بود.\n{SUPPORT}"
         )
 
     finally:
+
         try:
             os.remove(path)
         except:
@@ -395,18 +463,23 @@ STATUS={
 }
 
 def admin_buttons(o):
+
     n=o["id"]
 
     if o["status"]=="در انتظار بررسی":
+
         return kb([
             [
                 (f"🔵 شروع #{n}","start"),
                 (f"🟢 تکمیل #{n}","done")
             ],
-            [(f"🔴 لغو #{n}","cancel")]
+            [
+                (f"🔴 لغو #{n}","cancel")
+            ]
         ])
 
     if o["status"]=="در حال انجام":
+
         return kb([
             [
                 (f"🟢 تکمیل #{n}","done"),
@@ -417,6 +490,7 @@ def admin_buttons(o):
     return ADMIN_KB
 
 def admin_list(status):
+
     a=sorted(
         [
             o for o in ORDERS.values()
@@ -427,10 +501,15 @@ def admin_list(status):
     )
 
     if not a:
-        send(ADMIN,"📭 سفارشی نیست.",ADMIN_KB)
+        send(
+            ADMIN,
+            "📭 سفارشی نیست.",
+            ADMIN_KB
+        )
         return
 
     for o in a[:30]:
+
         send(
             ADMIN,
             f"""📦 #{o["id"]}
@@ -444,6 +523,7 @@ def admin_list(status):
         )
 
 def change(n,status):
+
     o=next(
         (
             x for x in ORDERS.values()
@@ -460,11 +540,11 @@ def change(n,status):
         )
         return
 
-    o.update(
-        status=status,
-        waiting=0,
-        discount_wait=0
-    )
+    o.update({
+        "status":status,
+        "waiting":0,
+        "discount_wait":0
+    })
 
     save()
 
@@ -482,14 +562,17 @@ def change(n,status):
 def admin_cmd(t):
 
     if t=="/admin":
+
         send(
             ADMIN,
             "⚙️ پنل مدیریت",
             ADMIN_KB
         )
+
         return True
 
     if t in STATUS:
+
         admin_list(STATUS[t])
         return True
 
@@ -566,6 +649,7 @@ def handle(m):
         return
 
     if uid==ADMIN or sid==ADMIN:
+
         if admin_cmd(t):
             return
 
@@ -599,6 +683,7 @@ def handle(m):
         return
 
     if t=="ℹ️ توضیحات":
+
         send(
             uid,
             "ℹ️ خدمات دارای پشتیبانی هستند.",
@@ -607,17 +692,21 @@ def handle(m):
                 [("🏠 اصلی","home")]
             ])
         )
+
         return
 
     if t=="🛒 خرید":
+
         send(
             uid,
             "🛍 خدمات",
             SERV
         )
+
         return
 
     if t=="📣 کانال":
+
         show_prices(
             uid,
             CHANNEL,
@@ -625,9 +714,11 @@ def handle(m):
             "📣 تعرفه کانال",
             "کانال"
         )
+
         return
 
     if t=="👥 گروه":
+
         show_prices(
             uid,
             CHANNEL,
@@ -635,9 +726,11 @@ def handle(m):
             "👥 تعرفه گروه",
             "گروه"
         )
+
         return
 
     if t=="⭐ فالور":
+
         show_prices(
             uid,
             FOLLOWERS,
@@ -645,23 +738,24 @@ def handle(m):
             "⭐ تعرفه فالور",
             "روبینو"
         )
+
         return
 
-    if t.startswith("buy|"):
+    # تشخیص مستقیم قیمت
+    p=find_price(t)
 
-        p=t.split("|",3)
+    if p:
 
-        if len(p)==4:
-            _,typ,service,price=p
+        typ,service,price=p
 
-            create(
-                m,
-                service,
-                price,
-                typ
-            )
+        create(
+            m,
+            service,
+            price,
+            typ
+        )
 
-            return
+        return
 
     o=last(uid)
 
@@ -669,10 +763,10 @@ def handle(m):
 
         if o and o.get("discount_wait"):
 
-            o.update(
-                discount_wait=0,
-                final=num(o["price"])
-            )
+            o.update({
+                "discount_wait":0,
+                "final":num(o["price"])
+            })
 
             save()
             payment(uid,o)
@@ -684,14 +778,17 @@ def handle(m):
         or getattr(m,"photo",None)
         or getattr(m,"image",None)
     ):
+
         receipt(m)
         return
 
     if o and o.get("discount_wait"):
+
         discount(m,t)
         return
 
     if o and o.get("waiting"):
+
         set_target(m,t)
         return
 
@@ -713,6 +810,7 @@ def handle(m):
                 or "📭 ندارد."
             )
         )
+
         return
 
     if t=="🧾 سفارش‌ها":
@@ -736,6 +834,7 @@ def handle(m):
                 or "📭 ندارد."
             )
         )
+
         return
 
     if t=="📜 قوانین":
@@ -747,13 +846,16 @@ def handle(m):
             "2️⃣ مقصد عمومی باشد.\n"
             "3️⃣ پس از پرداخت رسید ارسال شود."
         )
+
         return
 
     if t=="📞 پشتیبانی":
+
         send(uid,SUPPORT)
         return
 
     if t=="🏠 اصلی":
+
         start(m)
         return
 
@@ -766,9 +868,7 @@ def get_updates(offset=""):
 
     try:
 
-        p={
-            "limit":100
-        }
+        p={"limit":100}
 
         if offset:
             p["offset_id"]=offset
@@ -808,24 +908,20 @@ def clear_old():
 
     print("CLEARING OLD UPDATES...")
 
-    empty_count=0
-
-    while empty_count<2:
+    while True:
 
         arr,no=get_updates(offset)
 
         if no and no!=offset:
+
             offset=no
             write(OF,offset)
 
-        if arr:
-            empty_count=0
-        else:
-            empty_count+=1
-
-        time.sleep(.1)
+        if not arr:
+            break
 
     print("OLD UPDATES CLEARED")
+
     return offset
 
 def polling():
@@ -839,31 +935,44 @@ def polling():
             arr,no=get_updates(offset)
 
             if no and no!=offset:
+
                 offset=no
                 write(OF,offset)
 
             for x in arr:
 
                 try:
+
                     m=updates.Update(x).to_message()
 
                     if m:
                         handle(m)
 
                 except Exception as e:
-                    print("UPDATE:",repr(e))
+
+                    print(
+                        "UPDATE:",
+                        repr(e)
+                    )
 
         except exceptions.RubiBotAccessError:
+
             print("ACCESS ERROR")
             time.sleep(5)
 
         except Exception as e:
-            print("MAIN:",repr(e))
+
+            print(
+                "MAIN:",
+                repr(e)
+            )
+
             time.sleep(2)
 
 class Health(BaseHTTPRequestHandler):
 
     def do_GET(self):
+
         self.send_response(200)
         self.end_headers()
         self.wfile.write(b"OK")
@@ -876,12 +985,14 @@ def web():
     while True:
 
         try:
+
             HTTPServer(
                 ("0.0.0.0",PORT),
                 Health
             ).serve_forever()
 
-        except Exception:
+        except:
+
             time.sleep(2)
 
 if __name__=="__main__":
