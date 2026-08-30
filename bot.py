@@ -5,7 +5,7 @@ TOKEN=os.getenv("TOKEN","CDABFH0UFMCTTJJSAXMWDOTDORNFGAFFIQYZXZYJLBRVPVFJZTDXGXL
 CARD="6219861932569709"
 SUPPORT="@Poriysmeii"
 CODE="@PoriyBot"
-BASE="/storage/emulated/0/Download"
+BASE=os.path.dirname(os.path.abspath(__file__))
 
 AF=f"{BASE}/admin_id.txt"
 OF=f"{BASE}/rubika_offset.txt"
