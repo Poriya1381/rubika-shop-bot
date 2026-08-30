@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: rubika-shop-bot
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    envVars:
+      - key: RUBIKA_BOT_TOKEN
+        sync: false
+      - key: ADMIN_ID
+        sync: false
+      - key: CARD_NUMBER
+        sync: false
+      - key: SUPPORT_USERNAME
+        sync: false
