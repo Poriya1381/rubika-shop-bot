@@ -20,7 +20,16 @@ if not TOKEN:
     raise RuntimeError("TOKEN environment variable is not set")
 
 bot=RubiBot(TOKEN)
-http=requests.Session()
+
+def new_session():
+    s=requests.Session()
+    s.headers.update({
+        "Connection":"keep-alive",
+        "User-Agent":"RubikaShopBot/1.0"
+    })
+    return s
+
+http=new_session()
 
 def read(path,default=""):
     try:
@@ -49,7 +58,11 @@ def save():
     try:
         tmp=DF+".tmp"
         with open(tmp,"w",encoding="utf-8") as f:
-            json.dump(ORDERS,f,ensure_ascii=False,separators=(",",":"))
+            json.dump(
+                ORDERS,f,
+                ensure_ascii=False,
+                separators=(",",":")
+            )
         os.replace(tmp,DF)
     except Exception as e:
         print("SAVE:",repr(e))
@@ -62,7 +75,13 @@ def oid(o):
 
 def num(x):
     try:
-        return int(str(x).replace(",","").replace(".","").replace(" تومان","").strip())
+        return int(
+            str(x)
+            .replace(",","")
+            .replace(".","")
+            .replace(" تومان","")
+            .strip()
+        )
     except:
         return 0
 
@@ -117,12 +136,21 @@ FOLLOWERS=[
 
 def send(uid,text,key=MAIN):
     try:
-        bot.send_message(str(uid),text,chat_keypad=key)
+        bot.send_message(
+            str(uid),
+            text,
+            chat_keypad=key
+        )
+        return True
     except Exception as e:
         print("SEND:",repr(e))
+        return False
 
 def start(m):
-    send(m.chat_id,"🛍 فروشگاه روبیکا\n\n👇 انتخاب کنید:")
+    send(
+        m.chat_id,
+        "🛍 فروشگاه روبیکا\n\n👇 انتخاب کنید:"
+    )
 
 def user_orders(uid):
     return [
@@ -147,11 +175,15 @@ def username(m):
 def normalize(text):
     text=text.strip()
 
-    if re.fullmatch(r"@[A-Za-z0-9_]{3,64}",text):
+    if re.fullmatch(
+        r"@[A-Za-z0-9_]{3,64}",
+        text
+    ):
         return text
 
     m=re.fullmatch(
-        r"https?://(?:www\.)?(?:rubika\.ir|web\.rubika\.ir)/"
+        r"https?://(?:www\.)?"
+        r"(?:rubika\.ir|web\.rubika\.ir)/"
         r"([A-Za-z0-9_]{3,64})/?",
         text,re.I
     )
@@ -162,11 +194,16 @@ def normalize(text):
     return None
 
 def prices(uid,items,prefix,title):
-    rows=[[(prefix+x,"price")] for x in items]
+    rows=[
+        [(prefix+x,"price")]
+        for x in items
+    ]
+
     rows.append([
         ("🔙 خدمات","services"),
         ("🏠 اصلی","home")
     ])
+
     send(uid,title,kb(rows))
 
 def parse_price(text):
@@ -195,19 +232,23 @@ def parse_price(text):
 def create_order(m,service,price,typ):
     uid=str(m.chat_id)
 
-    ids=[oid(o) for o in ORDERS.values()]
-    n=max(ids+[1000])+1
+    n=max(
+        [oid(o) for o in ORDERS.values()]+[1000]
+    )+1
 
     ORDERS[str(n)]={
         "id":n,
         "chat_id":uid,
-        "sender_id":str(getattr(m,"sender_id","") or uid),
+        "sender_id":str(
+            getattr(m,"sender_id","") or uid
+        ),
         "username":username(m),
         "service":service,
         "type":typ,
         "price":price,
         "final":num(price),
         "discount":0,
+        "discount_code":"",
         "target":"",
         "status":"در انتظار بررسی",
         "waiting":1,
@@ -226,8 +267,7 @@ def create_order(m,service,price,typ):
         "کانال، پیج یا گروه:\n"
         "@username\n\n"
         "مثال:\n"
-        "@Poriysmeii\n\n"
-        "یا لینک روبیکا را ارسال کنید.",
+        "@Poriysmeii",
         kb([
             [("❌ خروج","cancel")],
             [("🏠 اصلی","home")]
@@ -264,16 +304,14 @@ def set_target(m,text):
         send(
             uid,
             "❌ یوزرنیم نامعتبر است.\n\n"
-            "به این شکل ارسال کنید:\n"
-            "@username\n\n"
-            "مثال:\n"
-            "@Poriysmeii"
+            "به شکل @username ارسال کنید."
         )
         return
 
     o["target"]=u
     o["waiting"]=0
     o["discount_wait"]=1
+
     save()
 
     send(
@@ -290,10 +328,12 @@ def discount(m,text):
     uid=str(m.chat_id)
     o=last_order(uid)
 
-    if not o:
+    if not o or not o.get("discount_wait"):
         return
 
-    if text.strip().lower()!=CODE.lower():
+    code=text.strip().lower()
+
+    if code!=CODE.lower():
         send(
             uid,
             "❌ کد تخفیف نامعتبر است.",
@@ -304,14 +344,20 @@ def discount(m,text):
         )
         return
 
+    if o.get("discount_code"):
+        send(uid,"⚠️ کد تخفیف این سفارش قبلاً ثبت شده.")
+        return
+
     p=num(o["price"])
     d=p*20//100
 
     o["discount"]=d
     o["final"]=p-d
+    o["discount_code"]=CODE
     o["discount_wait"]=0
 
     save()
+
     payment(uid,o)
 
 def is_media(m):
@@ -346,7 +392,9 @@ def receipt(m):
         if not fid:
             raise Exception("NO_FILE")
 
-        data=bot.download_file(bot.get_file(fid))
+        data=bot.download_file(
+            bot.get_file(fid)
+        )
 
         if not data:
             raise Exception("NO_DATA")
@@ -360,11 +408,16 @@ def receipt(m):
             f"📌 {o['type']}\n"
             f"🔗 {o['target']}\n"
             f"💰 {money(o['final'])} تومان\n"
+            f"🎁 تخفیف: {money(o.get('discount',0))} تومان\n"
             f"👤 {o['username']}"
         )
 
         with open(path,"rb") as f:
-            bot.send_photo(ADMIN,f,text=text)
+            bot.send_photo(
+                ADMIN,
+                f,
+                text=text
+            )
 
         o["receipt"]=1
         save()
@@ -377,7 +430,10 @@ def receipt(m):
 
     except Exception as e:
         print("RECEIPT:",repr(e))
-        send(uid,f"❌ ارسال رسید ناموفق بود.\n{SUPPORT}")
+        send(
+            uid,
+            f"❌ ارسال رسید ناموفق بود.\n{SUPPORT}"
+        )
 
     finally:
         try:
@@ -437,6 +493,7 @@ def admin_list(status):
 📌 {o["type"]}
 🔗 {o["target"] or "ثبت نشده"}
 💰 {money(o["final"])} تومان
+🎁 تخفیف: {money(o.get("discount",0))} تومان
 👤 {o["username"]}
 📊 {o["status"]}""",
             admin_buttons(o)
@@ -452,11 +509,7 @@ def change_status(n,status):
     )
 
     if not o:
-        send(
-            ADMIN,
-            f"❌ سفارش #{n} پیدا نشد.",
-            ADMIN_KB
-        )
+        send(ADMIN,f"❌ سفارش #{n} پیدا نشد.",ADMIN_KB)
         return
 
     o["status"]=status
@@ -495,13 +548,11 @@ def admin_command(text):
             del ORDERS[k]
 
         save()
-
         send(
             ADMIN,
             f"🗑 {len(keys)} سفارش حذف شد.",
             ADMIN_KB
         )
-
         return True
 
     m=re.match(
@@ -528,12 +579,16 @@ def handle(m):
         return
 
     uid=str(m.chat_id)
-    sid=str(getattr(m,"sender_id","") or "")
+    sid=str(
+        getattr(m,"sender_id","") or ""
+    )
 
     text=(
         getattr(m,"text","")
         or ""
     ).strip()
+
+    print("MSG:",repr(text),"CHAT:",uid)
 
     if text=="/admin":
         if uid==ADMIN or sid==ADMIN:
@@ -585,22 +640,42 @@ def handle(m):
         return
 
     if text=="📣 کانال":
-        prices(uid,CHANNEL,"📣 ","📣 تعرفه کانال")
+        prices(
+            uid,
+            CHANNEL,
+            "📣 ",
+            "📣 تعرفه کانال"
+        )
         return
 
     if text=="👥 گروه":
-        prices(uid,CHANNEL,"👥 ","👥 تعرفه گروه")
+        prices(
+            uid,
+            CHANNEL,
+            "👥 ",
+            "👥 تعرفه گروه"
+        )
         return
 
     if text=="⭐ فالور":
-        prices(uid,FOLLOWERS,"⭐ ","⭐ تعرفه فالور")
+        prices(
+            uid,
+            FOLLOWERS,
+            "⭐ ",
+            "⭐ تعرفه فالور"
+        )
         return
 
     p=parse_price(text)
 
     if p:
         typ,service,price=p
-        create_order(m,service,price,typ)
+        create_order(
+            m,
+            service,
+            price,
+            typ
+        )
         return
 
     o=last_order(uid)
@@ -628,25 +703,18 @@ def handle(m):
     if text=="📦 پیگیری":
         a=[
             o for o in user_orders(uid)
-            if o.get("status") in (
-                "در انتظار بررسی",
-                "در حال انجام"
-            )
+            if o.get("status")=="در حال انجام"
         ]
-
-        a=sorted(a,key=oid,reverse=True)
 
         send(
             uid,
-            "📦 پیگیری سفارش‌ها:\n\n"+
+            "📦 سفارش‌های در حال انجام:\n\n"+
             (
                 "\n".join(
-                    f"#{o['id']} | "
-                    f"{o['service']} | "
-                    f"{o['status']}"
+                    f"#{o['id']} | {o['service']}"
                     for o in a
                 )
-                or "📭 سفارش فعالی ندارید."
+                or "📭 ندارد."
             )
         )
         return
@@ -660,7 +728,7 @@ def handle(m):
 
         send(
             uid,
-            "🧾 همه سفارش‌ها:\n\n"+
+            "🧾 سفارش‌ها:\n\n"+
             (
                 "\n".join(
                     f"#{o['id']} | "
@@ -668,7 +736,7 @@ def handle(m):
                     f"{o['status']}"
                     for o in a
                 )
-                or "📭 سفارشی ثبت نشده."
+                or "📭 ندارد."
             )
         )
         return
@@ -694,6 +762,8 @@ def handle(m):
     send(uid,"👇 از منو انتخاب کنید.")
 
 def get_updates(offset=""):
+    global http
+
     try:
         p={"limit":100}
 
@@ -703,15 +773,17 @@ def get_updates(offset=""):
         r=http.post(
             f"{bot.BASE_URL}/getUpdates",
             json=p,
-            timeout=(3,10)
+            timeout=(3,8)
         )
 
         if r.status_code!=200:
+            print("HTTP:",r.status_code)
             return [],offset
 
         d=r.json()
 
         if d.get("status")!="OK":
+            print("API:",d)
             return [],offset
 
         data=d.get("data") or {}
@@ -723,6 +795,14 @@ def get_updates(offset=""):
 
     except Exception as e:
         print("NETWORK:",repr(e))
+
+        try:
+            http.close()
+        except:
+            pass
+
+        http=new_session()
+
         return [],offset
 
 def clear_old():
@@ -733,7 +813,7 @@ def clear_old():
 
     print("CLEAR OLD UPDATES")
 
-    for _ in range(20):
+    for _ in range(5):
         arr,no=get_updates(offset)
 
         if no and no!=offset:
@@ -743,13 +823,13 @@ def clear_old():
         if not arr:
             break
 
-        time.sleep(.05)
-
     print("OLD UPDATES CLEARED")
+
     return offset
 
 def polling():
     offset=clear_old()
+    errors=0
 
     while True:
         try:
@@ -759,18 +839,21 @@ def polling():
                 offset=no
                 write(OF,offset)
 
-            for item in arr:
-                try:
-                    m=updates.Update(item).to_message()
+            if arr:
+                errors=0
 
-                    if m:
-                        handle(m)
+                for item in arr:
+                    try:
+                        m=updates.Update(item).to_message()
 
-                except Exception as e:
-                    print("UPDATE:",repr(e))
+                        if m:
+                            handle(m)
 
-            if not arr:
-                time.sleep(.15)
+                    except Exception as e:
+                        print("UPDATE:",repr(e))
+
+            else:
+                time.sleep(.10)
 
         except exceptions.RubiBotAccessError:
             print("ACCESS ERROR")
@@ -780,12 +863,31 @@ def polling():
             return
 
         except Exception as e:
-            print("MAIN:",repr(e))
-            time.sleep(2)
+            errors+=1
+
+            print(
+                "MAIN:",
+                repr(e),
+                "ERRORS:",
+                errors
+            )
+
+            if errors>=3:
+                try:
+                    http.close()
+                except:
+                    pass
+
+                http=new_session()
+                errors=0
+
+            time.sleep(1)
 
 class Health(BaseHTTPRequestHandler):
+
     def do_GET(self):
         self.send_response(200)
+        self.send_header("Content-Type","text/plain")
         self.end_headers()
         self.wfile.write(b"OK")
 
@@ -795,16 +897,24 @@ class Health(BaseHTTPRequestHandler):
 def web():
     while True:
         try:
-            HTTPServer(
+            server=HTTPServer(
                 ("0.0.0.0",PORT),
                 Health
-            ).serve_forever()
+            )
+
+            print("WEB SERVER:",PORT)
+            server.serve_forever()
+
         except Exception as e:
             print("WEB:",repr(e))
             time.sleep(2)
 
 if __name__=="__main__":
-    Thread(target=web,daemon=True).start()
+
+    Thread(
+        target=web,
+        daemon=True
+    ).start()
 
     print("================================")
     print("RUBIKA BOT STARTED")
