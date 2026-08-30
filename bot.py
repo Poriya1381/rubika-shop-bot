@@ -3,7 +3,7 @@ import requests,os,time,json,re
 from threading import Thread
 from http.server import BaseHTTPRequestHandler,HTTPServer
 
-TOKEN=os.getenv("TOKEN","")
+TOKEN=os.getenv("TOKEN","CDBECG0HQBJVRMBNGUWWXVCPLCHUIYZISYNGPQPKQQAEKZNLVFFWFTUUUJKHLCDZ")
 ADMIN="b0KYDRB0BBLs0d5ad48d891eca78ebfa"
 CARD="6219861932569709"
 SUPPORT="@Poriysmeii"
