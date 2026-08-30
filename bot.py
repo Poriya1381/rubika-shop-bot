@@ -1,663 +1,280 @@
-from rubibot import RubiBot, types, updates, exceptions
-import requests
-import os
-import time
-import json
-import re
-import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from rubibot import RubiBot,types,updates,exceptions
+import requests,os,time,json,re,threading
+from http.server import BaseHTTPRequestHandler,HTTPServer
 
-TOKEN = os.getenv("RUBIKA_BOT_TOKEN", "").strip()
-CARD = os.getenv("CARD_NUMBER", "6219861932569709").strip()
-SUPPORT = os.getenv("SUPPORT_USERNAME", "@Poriysmeii").strip()
-BASE = os.getenv("DATA_DIR", ".")
+TOKEN=os.getenv("RUBIKA_BOT_TOKEN","").strip()
+CARD=os.getenv("CARD_NUMBER","6219861932569709").strip()
+SUPPORT=os.getenv("SUPPORT_USERNAME","@Poriysmeii").strip()
+BASE=os.getenv("DATA_DIR",".")
+ADMIN_FILE=f"{BASE}/admin_id.txt"; OFFSET_FILE=f"{BASE}/rubika_offset.txt"; ORDERS_FILE=f"{BASE}/orders.json"
 
-ADMIN_FILE = f"{BASE}/admin_id.txt"
-OFFSET_FILE = f"{BASE}/rubika_offset.txt"
-ORDERS_FILE = f"{BASE}/orders.json"
+bot=RubiBot(TOKEN) if TOKEN else None
+ADMIN_ID=os.getenv("ADMIN_ID","").strip()
+ORDERS={}
 
-bot = RubiBot(TOKEN) if TOKEN else None
-ADMIN_ID = None
-ORDERS = {}
-
-
-def read(path, default=None):
+def read(p,d=""):
     try:
-        if os.path.exists(path):
-            with open(path, encoding="utf-8") as f:
-                return f.read().strip() or default
-    except Exception:
-        pass
-    return default
+        with open(p,encoding="utf-8") as f:return f.read().strip() or d
+    except:return d
 
-
-def save(path, value):
+def save(p,v):
     try:
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(str(value))
-    except Exception as e:
-        print("SAVE ERROR:", repr(e), flush=True)
+        with open(p,"w",encoding="utf-8") as f:f.write(str(v))
+    except:pass
 
+if not ADMIN_ID: ADMIN_ID=read(ADMIN_FILE)
 
-ADMIN_ID = os.getenv("ADMIN_ID", "").strip() or read(ADMIN_FILE)
-
-try:
-    ORDERS = json.loads(read(ORDERS_FILE, "{}"))
-    if not isinstance(ORDERS, dict):
-        ORDERS = {}
-except Exception:
-    ORDERS = {}
-
+try: ORDERS=json.loads(read(ORDERS_FILE,"{}"))
+except: ORDERS={}
+if not isinstance(ORDERS,dict): ORDERS={}
 
 def save_orders():
     try:
-        with open(ORDERS_FILE, "w", encoding="utf-8") as f:
-            json.dump(ORDERS, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        print("ORDERS SAVE ERROR:", repr(e), flush=True)
-
+        with open(ORDERS_FILE,"w",encoding="utf-8") as f:json.dump(ORDERS,f,ensure_ascii=False)
+    except:pass
 
 def get_updates(offset=None):
-    params = {"limit": 10}
-
-    if offset:
-        params["offset_id"] = offset
-
     try:
-        r = requests.post(
-            f"{bot.BASE_URL}/getUpdates",
-            json=params,
-            timeout=60
-        )
-
-        if r.status_code in (502, 503, 504):
-            print("RUBIKA SERVER ERROR:", r.status_code, flush=True)
-            time.sleep(5)
-            return [], offset
-
-        if r.status_code != 200:
-            print("HTTP ERROR:", r.status_code, flush=True)
-            time.sleep(5)
-            return [], offset
-
-        text = r.text.strip()
-
-        if not text:
-            print("EMPTY RESPONSE", flush=True)
-            time.sleep(3)
-            return [], offset
-
-        try:
-            data = r.json()
-        except Exception:
-            print(
-                "INVALID RESPONSE:",
-                r.status_code,
-                repr(text[:200]),
-                flush=True
-            )
-            time.sleep(3)
-            return [], offset
-
-        if data.get("status") != "OK":
-            print("GET UPDATES ERROR:", data, flush=True)
-            time.sleep(3)
-            return [], offset
-
-        result = data.get("data") or {}
-
-        if not isinstance(result, dict):
-            return [], offset
-
-        arr = result.get("updates") or []
-
-        return (
-            [updates.Update(item) for item in arr],
-            result.get("next_offset_id") or offset
-        )
-
-    except requests.exceptions.Timeout:
-        print("GET UPDATES TIMEOUT", flush=True)
-        time.sleep(5)
-        return [], offset
-
-    except requests.exceptions.ConnectionError:
-        print("CONNECTION ERROR", flush=True)
-        time.sleep(5)
-        return [], offset
-
-    except requests.exceptions.RequestException as e:
-        print("REQUEST ERROR:", repr(e), flush=True)
-        time.sleep(5)
-        return [], offset
-
+        p={"limit":10}
+        if offset:p["offset_id"]=offset
+        r=requests.post(f"{bot.BASE_URL}/getUpdates",json=p,timeout=70)
+        if r.status_code==429:return [],offset,30
+        if r.status_code!=200:return [],offset,10
+        d=r.json()
+        if d.get("status")!="OK":
+            msg=str(d).upper()
+            return [],offset,30 if "TOO_REQUESTS" in msg or "NOT ACCESS" in msg else 10
+        x=d.get("data") or {}
+        return x.get("updates") or [],x.get("next_offset_id") or offset,3
     except Exception as e:
-        print("GET UPDATES ERROR:", repr(e), flush=True)
-        time.sleep(5)
-        return [], offset
-
+        print("GET UPDATES:",repr(e),flush=True)
+        return [],offset,10
 
 def kb(rows):
-    keyboard = types.ChatKeypad(resize_keyboard=True)
-
+    k=types.ChatKeypad(resize_keyboard=True)
     for row in rows:
-        keypad_row = types.KeypadRow()
+        r=types.KeypadRow()
+        for t,d in row:r.add(types.KeypadSimpleButton(t,d))
+        k.add(r)
+    return k
 
-        for text, data in row:
-            keypad_row.add(
-                types.KeypadSimpleButton(text, data)
-            )
+MAIN=kb([
+    [("🛍 خدمات روبیکا","services")],
+    [("📜 قوانین","rules"),("📞 پشتیبانی","support")]
+])
 
-        keyboard.add(keypad_row)
+SERVICES=kb([
+    [("📣 افزایش کانال","channel"),("👥 افزایش گروه","group")],
+    [("⭐ افزایش روبینو","followers")],
+    [("🏠 منوی اصلی","home")]
+])
 
-    return keyboard
+EXIT=kb([[("❌ خروج","cancel_order")]])
 
-
-def main_kb():
-    return kb([
-        [("🛍 خدمات روبیکا", "services")],
-        [("📜 قوانین", "rules")],
-        [("📞 پشتیبانی", "support")]
-    ])
-
-
-def services_kb():
-    return kb([
-        [("📣 افزایش کانال", "channel"),
-         ("👥 افزایش گروه", "group")],
-        [("⭐ افزایش روبینو", "followers")],
-        [("🏠 منوی اصلی", "home")]
-    ])
-
-
-def input_kb():
-    return kb([
-        [("❌ خروج", "cancel_order")]
-    ])
-
-
-# تعرفه کانال
-CHANNEL = [
-    "100 — 200",
-    "500 — 500",
-    "1,000 — 800",
-    "5,000 — 1,200",
-    "10,000 — 1,400",
-    "15,000 — 1,600"
+CHANNEL=[
+    "100 — 200","500 — 500","1,000 — 800",
+    "5,000 — 1,200","10,000 — 1,400","15,000 — 1,600"
 ]
 
-
-# سقف گروه 10 هزار
-GROUP = [
-    "100 — 200",
-    "500 — 500",
-    "1,000 — 800",
-    "5,000 — 1,200",
-    "10,000 — 1,400"
+GROUP=[
+    "100 — 200","500 — 500","1,000 — 800",
+    "5,000 — 1,200","10,000 — 1,400"
 ]
 
-
-# تعرفه روبینو
-FOLLOWERS = [
-    "1,000 — 500",
-    "10,000 — 1,500",
-    "50,000 — 5,000",
-    "100,000 — 9,500",
-    "150,000 — 14,500"
+FOLLOWERS=[
+    "1,000 — 500","10,000 — 1,500","50,000 — 5,000",
+    "100,000 — 9,500","150,000 — 14,500"
 ]
 
-
-def price_kb(items, prefix):
-    rows = []
-
-    for item in items:
-        rows.append([
-            (prefix + item, "price")
-        ])
-
-    rows.append([
-        ("🔙 خدمات", "services"),
-        ("🏠 اصلی", "home")
+def price_kb(items,p):
+    return kb([[(
+        p+x,"price"
+    )] for x in items]+[
+        [("🔙 خدمات","services"),("🏠 اصلی","home")]
     ])
-
-    return kb(rows)
-
 
 def start(m):
-    bot.send_message(
-        m.chat_id,
-        """🛍 فروشگاه خدمات روبیکا
+    bot.send_message(m.chat_id,
+"""🛍 فروشگاه خدمات روبیکا
 
 سلام دوست عزیز 👋
 
-📣 افزایش کانال
-👥 افزایش گروه
-⭐ افزایش روبینو
+خدمت موردنظر را انتخاب کنید 👇""",chat_keypad=MAIN)
 
-خدمت موردنظر را انتخاب کنید 👇""",
-        chat_keypad=main_kb()
-    )
-
-
-def get_username(m):
+def username(m):
     try:
-        chat = bot.get_chat(str(m.chat_id))
-        username = getattr(chat, "username", None)
+        u=getattr(bot.get_chat(str(m.chat_id)),"username",None)
+        return "@"+str(u).lstrip("@") if u else "ندارد"
+    except:return "ندارد"
 
-        if username:
-            return "@" + str(username).lstrip("@")
-
-    except Exception:
-        pass
-
-    return "ندارد"
-
-
-def normalize_link(text):
-    text = text.strip()
-
-    if text.startswith("@"):
-        username = text[1:].strip()
-
-        if re.fullmatch(r"[A-Za-z0-9_]{3,64}", username):
-            return "@" + username
-
-        return None
-
-    match = re.match(
-        r"^https?://(?:www\.)?(?:rubika\.ir|web\.rubika\.ir)/([^/?#\s]+)",
-        text,
-        re.I
-    )
-
-    if match:
-        username = match.group(1).lstrip("@")
-
-        if re.fullmatch(r"[A-Za-z0-9_]{3,64}", username):
-            return "@" + username
-
-    return None
-
-
-def cancel_order(m):
-    uid = str(m.chat_id)
-
-    if uid in ORDERS:
-        del ORDERS[uid]
-        save_orders()
-
-    bot.send_message(
-        uid,
-        """❌ ثبت سفارش لغو شد.
-
-به منوی خدمات برگشتید 👇""",
-        chat_keypad=services_kb()
-    )
-
-
-def new_order(m, service, price, typ):
-    uid = str(m.chat_id)
-
-    ORDERS[uid] = {
-        "sender_id": str(
-            getattr(m, "sender_id", "") or ""
-        ),
-        "username": get_username(m),
-        "service": service,
-        "price": price,
-        "type": typ,
-        "target": "",
-        "waiting": True,
-        "receipt": False
-    }
-
-    save_orders()
-
-    if typ == "کانال":
-        title = "📌 آیدی کانال را ارسال کنید"
-        example = "@username"
-
-    elif typ == "گروه":
-        title = "📌 آیدی گروه را ارسال کنید"
-        example = "@username"
-
+def normalize(t):
+    t=t.strip()
+    if t.startswith("@"):
+        u=t[1:]
     else:
-        title = "📌 آیدی پیج روبینو را ارسال کنید"
-        example = "@username"
+        m=re.match(r"^https?://(?:www\.)?(?:rubika\.ir|web\.rubika\.ir)/([^/?#\s]+)",t,re.I)
+        if not m:return None
+        u=m.group(1).lstrip("@")
+    return "@"+u if re.fullmatch(r"[A-Za-z0-9_]{3,64}",u) else None
 
-    bot.send_message(
-        uid,
-        f"""{title}
-
-مثال:
-{example}
-
-⚠️ فقط آیدی عمومی روبیکا را ارسال کنید.
-
-❌ برای لغو ثبت سفارش، دکمه «خروج» را بزنید.""",
-        chat_keypad=input_kb()
-    )
-
-
-def set_target(m, text):
-    uid = str(m.chat_id)
-    order = ORDERS.get(uid)
-
-    if not order:
-        return
-
-    link = normalize_link(text)
-
-    if not link:
-        if order["type"] == "کانال":
-            title = "📌 آیدی کانال را ارسال کنید"
-
-        elif order["type"] == "گروه":
-            title = "📌 آیدی گروه را ارسال کنید"
-
-        else:
-            title = "📌 آیدی پیج روبینو را ارسال کنید"
-
-        bot.send_message(
-            uid,
-            f"""❌ آیدی وارد شده نامعتبر است.
-
-{title}
+def new_order(m,service,price,typ):
+    uid=str(m.chat_id)
+    ORDERS[uid]={
+        "sender_id":str(getattr(m,"sender_id","") or ""),
+        "username":username(m),
+        "service":service,
+        "price":price,
+        "type":typ,
+        "target":"",
+        "waiting":True,
+        "receipt":False
+    }
+    save_orders()
+    title={"کانال":"آیدی کانال","گروه":"آیدی گروه","روبینو":"آیدی پیج روبینو"}[typ]
+    bot.send_message(uid,
+f"""📌 {title} را ارسال کنید
 
 مثال:
 @username
 
 ⚠️ فقط آیدی عمومی روبیکا را ارسال کنید.
 
-❌ برای لغو، دکمه «خروج» را بزنید.""",
-            chat_keypad=input_kb()
-        )
+❌ برای لغو، دکمه خروج را بزنید.""",chat_keypad=EXIT)
 
+def set_target(m,text):
+    o=ORDERS.get(str(m.chat_id))
+    if not o:return
+    link=normalize(text)
+    if not link:
+        title={"کانال":"آیدی کانال","گروه":"آیدی گروه","روبینو":"آیدی پیج روبینو"}[o["type"]]
+        bot.send_message(m.chat_id,
+f"""❌ آیدی نامعتبر است.
+
+📌 {title} را ارسال کنید
+
+مثال:
+@username
+
+❌ برای لغو، دکمه خروج را بزنید.""",chat_keypad=EXIT)
         return
-
-    order["target"] = link
-    order["waiting"] = False
-    order["username"] = get_username(m)
-
+    o.update(target=link,waiting=False,username=username(m))
     save_orders()
+    bot.send_message(m.chat_id,
+f"""✅ مقصد ثبت شد
 
-    bot.send_message(
-        uid,
-        f"""✅ مقصد با موفقیت ثبت شد.
+🛍 {o["service"]}
+📌 نوع: {o["type"]}
+🔗 {o["target"]}
 
-🛍 خدمت: {order["service"]}
-📌 نوع: {order["type"]}
-🔗 مقصد: {order["target"]}
-
-💰 مبلغ: {order["price"]} تومان
+💰 {o["price"]} تومان
 
 💳 شماره کارت:
 {CARD}
 
 👤 به نام پوریا سمیعی
 
-📸 بعد از واریز، عکس رسید را همینجا ارسال کنید.
+📸 عکس رسید را همینجا ارسال کنید.""",chat_keypad=MAIN)
 
-⚠️ پس از ارسال رسید، برای ادمین ارسال می‌شود.""",
-        chat_keypad=main_kb()
-    )
-
-
-def receipt_text(m, order):
+def receipt_text(m,o):
     return f"""💰 سفارش پرداختی جدید
 
-🛍 خدمت: {order["service"]}
-📌 نوع: {order["type"]}
-💰 مبلغ: {order["price"]} تومان
+🛍 خدمت: {o["service"]}
+📌 نوع: {o["type"]}
+💰 مبلغ: {o["price"]} تومان
 
-🔗 آیدی مقصد:
-{order["target"]}
+🔗 مقصد:
+{o["target"]}
 
-👤 یوزرنیم کاربر:
-{order.get("username", "ندارد")}
+👤 یوزرنیم:
+{o.get("username","ندارد")}
 
-🆔 شناسه کاربر:
-{order.get("sender_id", "ندارد")}
+🆔 شناسه:
+{o.get("sender_id","ندارد")}
 
-🆔 چت کاربر:
+🆔 چت:
 {m.chat_id}
 
 📸 رسید دریافت شد."""
 
-
-def send_admin(m, order):
-    if not ADMIN_ID:
-        print("ADMIN ID NOT SET", flush=True)
-        return False
-
+def send_admin(m,o):
+    if not ADMIN_ID:return False
     try:
-        file_obj = getattr(m, "file", None)
-
-        file_id = (
-            getattr(file_obj, "id", None)
-            or getattr(file_obj, "file_id", None)
-        )
-
-        if not file_id:
-            print("FILE ID NOT FOUND", flush=True)
-            return False
-
-        url = bot.get_file(file_id)
-        data = bot.download_file(url)
-
-        if not data:
-            print("FILE DOWNLOAD FAILED", flush=True)
-            return False
-
-        path = f"{BASE}/receipt.jpg"
-
-        with open(path, "wb") as f:
-            f.write(data)
-
-        with open(path, "rb") as f:
-            bot.send_photo(
-                ADMIN_ID,
-                f,
-                text=receipt_text(m, order)
-            )
-
-        try:
-            os.remove(path)
-        except Exception:
-            pass
-
-        print("RECEIPT SENT TO ADMIN", flush=True)
+        f=getattr(m,"file",None)
+        fid=getattr(f,"id",None) or getattr(f,"file_id",None)
+        if not fid:return False
+        data=bot.download_file(bot.get_file(fid))
+        if not data:return False
+        path=f"{BASE}/receipt.jpg"
+        with open(path,"wb") as x:x.write(data)
+        with open(path,"rb") as x:bot.send_photo(ADMIN_ID,x,text=receipt_text(m,o))
+        try:os.remove(path)
+        except:pass
         return True
-
     except Exception as e:
-        print("RECEIPT ERROR:", repr(e), flush=True)
+        print("RECEIPT:",repr(e),flush=True)
         return False
 
+def media(m):
+    return bool(getattr(m,"file",None) or getattr(m,"photo",None) or getattr(m,"image",None))
 
-def is_media(m):
-    try:
-        if getattr(m, "file", None):
-            return True
-
-        if getattr(m, "photo", None):
-            return True
-
-        if getattr(m, "image", None):
-            return True
-
-    except Exception:
-        pass
-
-    return False
-
-
-def file_received(m):
-    uid = str(m.chat_id)
-    order = ORDERS.get(uid)
-
-    if not order:
-        bot.send_message(
-            uid,
-            "❌ سفارش فعالی ندارید.",
-            chat_keypad=main_kb()
-        )
-        return
-
-    if not order.get("target"):
-        bot.send_message(
-            uid,
-            "❌ ابتدا آیدی مقصد را ارسال کنید.",
-            chat_keypad=input_kb()
-        )
-        return
-
-    if order.get("receipt"):
-        bot.send_message(
-            uid,
-            "⚠️ این رسید قبلاً دریافت شده است.",
-            chat_keypad=main_kb()
-        )
-        return
-
-    if send_admin(m, order):
-
-        order["receipt"] = True
-        order["receipt_message_id"] = str(
-            getattr(m, "message_id", "")
-        )
-
-        save_orders()
-
-        bot.send_message(
-            uid,
-            """✅ رسید دریافت شد و برای ادمین ارسال شد.
-
-⏳ منتظر بررسی سفارش باشید.""",
-            chat_keypad=main_kb()
-        )
-
+def receipt(m):
+    uid=str(m.chat_id);o=ORDERS.get(uid)
+    if not o:
+        bot.send_message(uid,"❌ سفارش فعالی ندارید.",chat_keypad=MAIN);return
+    if not o.get("target"):
+        bot.send_message(uid,"❌ ابتدا آیدی مقصد را ارسال کنید.",chat_keypad=EXIT);return
+    if o.get("receipt"):
+        bot.send_message(uid,"⚠️ رسید قبلاً دریافت شده.",chat_keypad=MAIN);return
+    if send_admin(m,o):
+        o["receipt"]=True;save_orders()
+        bot.send_message(uid,"✅ رسید دریافت شد و برای ادمین ارسال شد.\n\n⏳ منتظر بررسی باشید.",chat_keypad=MAIN)
     else:
-        bot.send_message(
-            uid,
-            f"""❌ عکس رسید ارسال نشد.
-
-📸 لطفاً عکس رسید پرداخت را دوباره ارسال کنید.
-
-اگر مشکل ادامه داشت:
-
-📞 پشتیبانی:
-{SUPPORT}""",
-            chat_keypad=main_kb()
-        )
-
+        bot.send_message(uid,f"❌ ارسال رسید ناموفق بود.\n\n📞 پشتیبانی: {SUPPORT}",chat_keypad=MAIN)
 
 def handle(m):
     global ADMIN_ID
+    if not m:return
+    uid=str(m.chat_id);text=(getattr(m,"text","") or "").strip()
 
-    if not m:
-        return
-
-    uid = str(m.chat_id)
-    text = (getattr(m, "text", "") or "").strip()
-
-    # ادمین
     if text.startswith("/admin"):
+        if ADMIN_ID and uid!=str(ADMIN_ID):
+            bot.send_message(uid,"❌ دسترسی ندارید.");return
+        ADMIN_ID=uid;save(ADMIN_FILE,uid)
+        bot.send_message(uid,"✅ ادمین ذخیره شد.");return
 
-        if ADMIN_ID and uid != str(ADMIN_ID):
-            bot.send_message(
-                uid,
-                "❌ دسترسی ندارید."
-            )
-            return
-
-        ADMIN_ID = uid
-        save(ADMIN_FILE, uid)
-
-        bot.send_message(
-            uid,
-            "✅ ادمین ذخیره شد."
-        )
-        return
-
-    # استارت
     if text.startswith("/start"):
+        if not ADMIN_ID:ADMIN_ID=uid;save(ADMIN_FILE,uid)
+        start(m);return
 
-        if not ADMIN_ID:
-            ADMIN_ID = uid
-            save(ADMIN_FILE, uid)
+    if text=="❌ خروج":
+        ORDERS.pop(uid,None);save_orders()
+        bot.send_message(uid,"❌ سفارش لغو شد.\n\nبه منوی خدمات برگشتید 👇",chat_keypad=SERVICES);return
 
-        # اگر سفارش قبلی نیمه‌کاره بوده، پاک نشود
-        # تا کاربر بتواند ادامه دهد.
-        start(m)
+    if media(m):
+        receipt(m);return
+
+    o=ORDERS.get(uid)
+    if o and o.get("waiting"):
+        if text:set_target(m,text)
         return
 
-    # خروج از ثبت سفارش
-    if text == "❌ خروج":
-        cancel_order(m)
-        return
+    menus={
+        "🛍 خدمات روبیکا":("🛍 خدمات روبیکا",SERVICES),
+        "📣 افزایش کانال":("📣 تعرفه افزایش کانال",price_kb(CHANNEL,"📣 ")),
+        "👥 افزایش گروه":("👥 تعرفه افزایش گروه",price_kb(GROUP,"👥 ")),
+        "⭐ افزایش روبینو":("⭐ تعرفه افزایش روبینو",price_kb(FOLLOWERS,"⭐ ")),
+        "🔙 خدمات":("🛍 خدمات روبیکا",SERVICES)
+    }
 
-    # اگر عکس/فایل است
-    if is_media(m):
-        file_received(m)
-        return
+    if text in menus:
+        msg,key=menus[text]
+        bot.send_message(uid,msg,chat_keypad=key);return
 
-    order = ORDERS.get(uid)
+    if text=="🏠 منوی اصلی":
+        start(m);return
 
-    # کاربر در مرحله ورود آیدی است
-    if order and order.get("waiting"):
-
-        if text:
-            set_target(m, text)
-
-        return
-
-    # خدمات
-    if text == "🛍 خدمات روبیکا":
-        bot.send_message(
-            uid,
-            "🛍 خدمات روبیکا\n\nخدمت موردنظر را انتخاب کنید 👇",
-            chat_keypad=services_kb()
-        )
-        return
-
-    # کانال
-    if text == "📣 افزایش کانال":
-        bot.send_message(
-            uid,
-            """📣 تعرفه افزایش کانال
-
-⚠️ مقصد باید کانال عمومی باشد.""",
-            chat_keypad=price_kb(CHANNEL, "📣 ")
-        )
-        return
-
-    # گروه
-    if text == "👥 افزایش گروه":
-        bot.send_message(
-            uid,
-            """👥 تعرفه افزایش گروه
-
-⚠️ سقف سفارش گروه ۱۰,۰۰۰ عضو است.""",
-            chat_keypad=price_kb(GROUP, "👥 ")
-        )
-        return
-
-    # روبینو
-    if text == "⭐ افزایش روبینو":
-        bot.send_message(
-            uid,
-            """⭐ تعرفه افزایش روبینو
-
-⚠️ مقصد باید پیج عمومی روبینو باشد.""",
-            chat_keypad=price_kb(FOLLOWERS, "⭐ ")
-        )
-        return
-
-    # قوانین
-    if text == "📜 قوانین":
-        bot.send_message(
-            uid,
-            f"""📜 قوانین ثبت سفارش
+    if text=="📜 قوانین":
+        bot.send_message(uid,f"""📜 قوانین ثبت سفارش
 
 1️⃣ پس از ثبت سفارش، امکان لغو یا تغییر سفارش نیست.
 2️⃣ آیدی صحیح مقصد را ارسال کنید.
@@ -665,202 +282,72 @@ def handle(m):
 4️⃣ زمان انجام سفارش متغیر است.
 5️⃣ پس از پرداخت، رسید را ارسال کنید.
 
-📞 آیدی ادمین جهت مشکلات:
-{SUPPORT}
+📞 پشتیبانی:
+{SUPPORT}""",chat_keypad=MAIN);return
 
-🙏 باتشکر""",
-            chat_keypad=main_kb()
-        )
-        return
+    if text=="📞 پشتیبانی":
+        bot.send_message(uid,f"📞 پشتیبانی\n\n👤 {SUPPORT}",chat_keypad=MAIN);return
 
-    # پشتیبانی
-    if text == "📞 پشتیبانی":
-        bot.send_message(
-            uid,
-            f"""📞 پشتیبانی
+    for p,typ in [("📣 ","کانال"),("👥 ","گروه"),("⭐ ","روبینو")]:
+        if text.startswith(p) and " — " in text:
+            service,price=text[len(p):].split(" — ",1)
+            new_order(m,service,price,typ);return
 
-👤 آیدی پشتیبانی:
-{SUPPORT}""",
-            chat_keypad=main_kb()
-        )
-        return
+    bot.send_message(uid,"از دکمه‌های منو استفاده کنید 👇",chat_keypad=MAIN)
 
-    # خدمات
-    if text == "🔙 خدمات":
-        bot.send_message(
-            uid,
-            "🛍 خدمات روبیکا",
-            chat_keypad=services_kb()
-        )
-        return
-
-    # اصلی
-    if text == "🏠 منوی اصلی":
-        start(m)
-        return
-
-    # انتخاب قیمت
-    for prefix, typ in [
-        ("📣 ", "کانال"),
-        ("👥 ", "گروه"),
-        ("⭐ ", "روبینو")
-    ]:
-
-        if text.startswith(prefix) and " — " in text:
-
-            service, price = text[len(prefix):].split(
-                " — ",
-                1
-            )
-
-            new_order(
-                m,
-                service,
-                price,
-                typ
-            )
-
-            return
-
-    bot.send_message(
-        uid,
-        "از دکمه‌های منو استفاده کنید 👇",
-        chat_keypad=main_kb()
-    )
-
-
-def start_health_server():
-    port = int(os.getenv("PORT", "10000"))
-
-    class Handler(BaseHTTPRequestHandler):
-
+def health():
+    port=int(os.getenv("PORT","10000"))
+    class H(BaseHTTPRequestHandler):
         def do_GET(self):
             self.send_response(200)
-            self.send_header(
-                "Content-Type",
-                "text/plain; charset=utf-8"
-            )
+            self.send_header("Content-Type","text/plain")
             self.end_headers()
-
-            self.wfile.write(
-                b"Rubika bot is running"
-            )
-
-        def log_message(self, format, *args):
-            return
-
-    server = HTTPServer(
-        ("0.0.0.0", port),
-        Handler
-    )
-
-    threading.Thread(
-        target=server.serve_forever,
-        daemon=True
-    ).start()
-
-    print(
-        "HEALTH SERVER:",
-        port,
-        flush=True
-    )
-
+            self.wfile.write(b"Rubika bot is running")
+        def log_message(self,*a):pass
+    threading.Thread(target=HTTPServer(("0.0.0.0",port),H).serve_forever,daemon=True).start()
+    print("HEALTH SERVER:",port,flush=True)
 
 def run():
-    if not TOKEN:
-        raise RuntimeError(
-            "RUBIKA_BOT_TOKEN is not set"
-        )
+    if not TOKEN:raise RuntimeError("RUBIKA_BOT_TOKEN is not set")
+    health()
+    print("BOT STARTED",flush=True)
+    print("ADMIN ID:",ADMIN_ID or "NOT SET",flush=True)
+    print("API:",bot.BASE_URL,flush=True)
 
-    if bot is None:
-        raise RuntimeError(
-            "Bot could not be initialized"
-        )
-
-    start_health_server()
-
-    print("================================", flush=True)
-    print("BOT STARTED", flush=True)
-    print(
-        "ADMIN ID:",
-        ADMIN_ID or "NOT SET",
-        flush=True
-    )
-    print(
-        "API:",
-        bot.BASE_URL,
-        flush=True
-    )
-    print("================================", flush=True)
-
-    offset = read(OFFSET_FILE)
+    offset=read(OFFSET_FILE)
+    backoff=0
 
     while True:
-
         try:
-            received, next_offset = get_updates(offset)
-
-            if next_offset and next_offset != offset:
-                offset = next_offset
-                save(OFFSET_FILE, offset)
-
-            for update in received:
-                try:
-                    message = update.to_message()
-
-                    if message:
-                        handle(message)
-
+            arr,no,delay=get_updates(offset)
+            if no and no!=offset:
+                offset=no;save(OFFSET_FILE,offset)
+            for x in arr:
+                try:handle(updates.Update(x).to_message())
+                except exceptions.RubiBotAccessError as e:raise e
                 except Exception as e:
-                    print(
-                        "UPDATE ERROR:",
-                        repr(e),
-                        flush=True
-                    )
-
-            if not received:
-                time.sleep(1)
-
-        except exceptions.RubiBotAccessError:
-            print(
-                "INVALID_ACCESS",
-                flush=True
-            )
-            time.sleep(10)
-
-        except KeyboardInterrupt:
-            print(
-                "BOT STOPPED",
-                flush=True
-            )
-            break
-
+                    print("UPDATE ERROR:",repr(e),flush=True)
+            backoff=0
+            time.sleep(delay)
+        except exceptions.RubiBotAccessError as e:
+            backoff=min(30 if backoff<30 else backoff*2,120)
+            print("NOT ACCESS:",repr(e),flush=True)
+            print("WAIT:",backoff,"SECONDS",flush=True)
+            time.sleep(backoff)
         except Exception as e:
-            print(
-                "MAIN ERROR:",
-                repr(e),
-                flush=True
-            )
-            time.sleep(5)
+            s=str(e).upper()
+            if "TOO_REQUESTS" in s or "NOT ACCESS" in s or "429" in s:
+                backoff=min(30 if backoff<30 else backoff*2,120)
+                print("RATE LIMIT:",repr(e),flush=True)
+                print("WAIT:",backoff,"SECONDS",flush=True)
+                time.sleep(backoff)
+            else:
+                print("MAIN ERROR:",repr(e),flush=True)
+                time.sleep(10)
 
-
-if __name__ == "__main__":
-
-    while True:
-        try:
-            run()
-
-        except KeyboardInterrupt:
-            print(
-                "BOT STOPPED",
-                flush=True
-            )
-            break
-
-        except Exception as e:
-            print(
-                "RESTARTING:",
-                repr(e),
-                flush=True
-            )
-            time.sleep(5)
+while True:
+    try:run()
+    except KeyboardInterrupt:break
+    except Exception as e:
+        print("RESTART:",repr(e),flush=True)
+        time.sleep(10)
