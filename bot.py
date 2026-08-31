@@ -3,7 +3,7 @@ import os,time,json,re,requests
 from threading import Thread
 from http.server import BaseHTTPRequestHandler,HTTPServer
 
-TOKEN="CDBECG0UXQGRRZSSDLFQSTKDIJEHEUXGFUWQOPYPLJBBMZFYAFIKMPSEBFUIWCLH"
+TOKEN=os.getenv("TOKEN","CDBECG0UXQGRRZSSDLFQSTKDIJEHEUXGFUWQOPYPLJBBMZFYAFIKMPSEBFUIWCLH")
 
 ADMINS={
     "u0KYDRB070eb6d2f015b56edb5476dcd",
@@ -13,6 +13,7 @@ ADMINS={
 CARD="6219861932569709"
 SUPPORT="@Poriysmeii"
 CODE="@PoriyBot"
+
 PORT=int(os.getenv("PORT","10000"))
 
 BASE="data"
@@ -20,9 +21,19 @@ os.makedirs(BASE,exist_ok=True)
 
 OF=f"{BASE}/offset.txt"
 DF=f"{BASE}/orders.json"
+READY=f"{BASE}/ready.flag"
+
+API=f"https://botapi.rubika.ir/v3/{TOKEN}"
 
 bot=RubiBot(TOKEN)
+
 http=requests.Session()
+http.headers.update({"Content-Type":"application/json"})
+
+BACKOFF_MIN=1
+BACKOFF_MAX=60
+POLL_LIMIT=100
+REQUEST_TIMEOUT=(5,30)
 
 
 def read(path,default=""):
@@ -34,13 +45,19 @@ def read(path,default=""):
 
 
 def write(path,value):
+    tmp=path+".tmp"
     try:
-        tmp=path+".tmp"
         with open(tmp,"w",encoding="utf-8") as f:
             f.write(str(value))
         os.replace(tmp,path)
+        return True
     except Exception as e:
         print("WRITE:",repr(e))
+        return False
+
+
+def valid_offset(x):
+    return bool(x and isinstance(x,str) and len(x)<500)
 
 
 try:
@@ -52,8 +69,8 @@ except:
 
 
 def save_orders():
+    tmp=DF+".tmp"
     try:
-        tmp=DF+".tmp"
         with open(tmp,"w",encoding="utf-8") as f:
             json.dump(
                 ORDERS,
@@ -128,16 +145,18 @@ FOLLOWERS=[
 
 
 def send(uid,text,key=MAIN):
-    try:
-        bot.send_message(
-            str(uid),
-            str(text),
-            chat_keypad=key
-        )
-        return True
-    except Exception as e:
-        print("SEND:",repr(e))
-        return False
+    for attempt in range(3):
+        try:
+            bot.send_message(
+                str(uid),
+                str(text),
+                chat_keypad=key
+            )
+            return True
+        except Exception as e:
+            print("SEND:",repr(e))
+            time.sleep(min(2**attempt,5))
+    return False
 
 
 def admin_send(text,key=ADMIN_KB):
@@ -263,13 +282,10 @@ def extract_price(text):
 
     if text.startswith("📣"):
         typ="کانال"
-
     elif text.startswith("👥"):
         typ="گروه"
-
     elif text.startswith("⭐"):
         typ="روبینو"
-
     else:
         return None
 
@@ -311,7 +327,6 @@ def create_order(m,service,price,typ):
     send(
         uid,
         "📌 یوزرنیم مقصد را ارسال کنید.\n\n"
-        "مثال:\n"
         "@username\n\n"
         "یا لینک روبیکا را ارسال کنید.",
         kb([
@@ -341,7 +356,6 @@ def payment(uid,o):
 
 def set_target(m,text):
     uid=str(m.chat_id)
-
     o=last_order(uid)
 
     if not o or not o.get("waiting"):
@@ -353,8 +367,7 @@ def set_target(m,text):
         send(
             uid,
             "❌ یوزرنیم نامعتبر است.\n\n"
-            "مثال:\n"
-            "@Poriysmeii"
+            "مثال:\n@Poriysmeii"
         )
         return
 
@@ -377,14 +390,12 @@ def set_target(m,text):
 
 def discount(m,text):
     uid=str(m.chat_id)
-
     o=last_order(uid)
 
     if not o:
         return
 
     if text.strip().lower()!=CODE.lower():
-
         send(
             uid,
             "❌ کد تخفیف نامعتبر است.",
@@ -393,7 +404,6 @@ def discount(m,text):
                 [("❌ خروج","cancel")]
             ])
         )
-
         return
 
     price=num(o["price"])
@@ -404,7 +414,6 @@ def discount(m,text):
     o["discount_wait"]=0
 
     save_orders()
-
     payment(uid,o)
 
 
@@ -418,7 +427,6 @@ def is_media(m):
 
 def receipt(m):
     uid=str(m.chat_id)
-
     o=last_order(uid)
 
     if not o:
@@ -426,21 +434,13 @@ def receipt(m):
         return
 
     if o.get("receipt"):
-        send(
-            uid,
-            "⚠️ رسید قبلاً ارسال شده."
-        )
+        send(uid,"⚠️ رسید قبلاً ارسال شده.")
         return
 
     path=f"{BASE}/receipt_{o['id']}.jpg"
 
     try:
-
-        f=getattr(
-            m,
-            "file",
-            None
-        )
+        f=getattr(m,"file",None)
 
         fid=(
             getattr(f,"id",None)
@@ -448,12 +448,7 @@ def receipt(m):
         )
 
         if not fid:
-
-            p=getattr(
-                m,
-                "photo",
-                None
-            )
+            p=getattr(m,"photo",None)
 
             fid=(
                 getattr(p,"id",None)
@@ -461,28 +456,19 @@ def receipt(m):
             )
 
         if not fid:
-            raise Exception(
-                "FILE_ID_NOT_FOUND"
-            )
+            raise Exception("FILE_ID_NOT_FOUND")
 
         file_url=bot.get_file(fid)
 
         if not file_url:
-            raise Exception(
-                "GET_FILE_FAILED"
-            )
+            raise Exception("GET_FILE_FAILED")
 
         data=bot.download_file(file_url)
 
         if not data:
-            raise Exception(
-                "DOWNLOAD_FAILED"
-            )
+            raise Exception("DOWNLOAD_FAILED")
 
-        with open(
-            path,
-            "wb"
-        ) as fp:
+        with open(path,"wb") as fp:
             fp.write(data)
 
         caption=(
@@ -497,48 +483,30 @@ def receipt(m):
         sent=False
 
         for admin in ADMINS:
-
             try:
-
                 bot.send_photo(
                     admin,
                     path,
                     text=caption
                 )
-
                 sent=True
-
             except Exception as e:
-
-                print(
-                    "SEND_PHOTO:",
-                    repr(e)
-                )
+                print("SEND_PHOTO:",repr(e))
 
                 try:
-
                     bot.send_file(
                         admin,
                         path,
                         text=caption
                     )
-
                     sent=True
-
                 except Exception as e2:
-
-                    print(
-                        "SEND_FILE:",
-                        repr(e2)
-                    )
+                    print("SEND_FILE:",repr(e2))
 
         if not sent:
-            raise Exception(
-                "SEND_RECEIPT_FAILED"
-            )
+            raise Exception("SEND_RECEIPT_FAILED")
 
         o["receipt"]=1
-
         save_orders()
 
         send(
@@ -548,11 +516,7 @@ def receipt(m):
         )
 
     except Exception as e:
-
-        print(
-            "RECEIPT:",
-            repr(e)
-        )
+        print("RECEIPT:",repr(e))
 
         send(
             uid,
@@ -561,7 +525,6 @@ def receipt(m):
         )
 
     finally:
-
         try:
             os.remove(path)
         except:
@@ -569,41 +532,31 @@ def receipt(m):
 
 
 def admin_buttons(o):
-
     n=o["id"]
 
     if o["status"]=="در انتظار بررسی":
-
         return kb([
             [
                 (f"🔵 شروع #{n}","start"),
                 (f"🟢 تکمیل #{n}","done")
             ],
-            [
-                (f"🔴 لغو #{n}","cancel")
-            ],
-            [
-                ("🔙 پنل مدیریت","admin")
-            ]
+            [(f"🔴 لغو #{n}","cancel")],
+            [("🔙 پنل مدیریت","admin")]
         ])
 
     if o["status"]=="در حال انجام":
-
         return kb([
             [
                 (f"🟢 تکمیل #{n}","done"),
                 (f"🔴 لغو #{n}","cancel")
             ],
-            [
-                ("🔙 پنل مدیریت","admin")
-            ]
+            [("🔙 پنل مدیریت","admin")]
         ])
 
     return ADMIN_KB
 
 
 def admin_list(status,admin_id):
-
     orders=sorted(
         [
             o for o in ORDERS.values()
@@ -614,17 +567,14 @@ def admin_list(status,admin_id):
     )
 
     if not orders:
-
         send(
             admin_id,
             f"📭 سفارشی با وضعیت «{status}» وجود ندارد.",
             ADMIN_KB
         )
-
         return
 
     for o in orders[:30]:
-
         send(
             admin_id,
             f"""📦 سفارش #{o["id"]}
@@ -640,7 +590,6 @@ def admin_list(status,admin_id):
 
 
 def change_status(order_id,status,admin_id):
-
     o=next(
         (
             x for x in ORDERS.values()
@@ -650,13 +599,11 @@ def change_status(order_id,status,admin_id):
     )
 
     if not o:
-
         send(
             admin_id,
             f"❌ سفارش #{order_id} پیدا نشد.",
             ADMIN_KB
         )
-
         return
 
     o["status"]=status
@@ -667,8 +614,7 @@ def change_status(order_id,status,admin_id):
 
     send(
         o["chat_id"],
-        f"📦 سفارش #{order_id}\n"
-        f"📊 وضعیت: {status}"
+        f"📦 سفارش #{order_id}\n📊 وضعیت: {status}"
     )
 
     send(
@@ -679,59 +625,47 @@ def change_status(order_id,status,admin_id):
 
 
 def admin_command(text,admin_id):
-
     if text in (
         "/admin",
         "🔙 پنل مدیریت",
         "⚙️ پنل مدیریت"
     ):
-
         send(
             admin_id,
             "⚙️ پنل مدیریت",
             ADMIN_KB
         )
-
         return True
 
     if text=="📋 جدید":
-
         admin_list(
             "در انتظار بررسی",
             admin_id
         )
-
         return True
 
     if text=="🔵 درحال انجام":
-
         admin_list(
             "در حال انجام",
             admin_id
         )
-
         return True
 
     if text=="🟢 تکمیل":
-
         admin_list(
             "تکمیل شد",
             admin_id
         )
-
         return True
 
     if text=="🔴 لغوشده":
-
         admin_list(
             "لغو شد",
             admin_id
         )
-
         return True
 
     if text=="🗑 حذف لغوشده":
-
         keys=[
             k for k,o in ORDERS.items()
             if o.get("status")=="لغو شد"
@@ -747,7 +681,6 @@ def admin_command(text,admin_id):
             f"🗑 {len(keys)} سفارش حذف شد.",
             ADMIN_KB
         )
-
         return True
 
     m=re.match(
@@ -756,13 +689,11 @@ def admin_command(text,admin_id):
     )
 
     if m:
-
         change_status(
             m.group(1),
             "در حال انجام",
             admin_id
         )
-
         return True
 
     m=re.match(
@@ -771,13 +702,11 @@ def admin_command(text,admin_id):
     )
 
     if m:
-
         change_status(
             m.group(1),
             "تکمیل شد",
             admin_id
         )
-
         return True
 
     m=re.match(
@@ -786,45 +715,30 @@ def admin_command(text,admin_id):
     )
 
     if m:
-
         change_status(
             m.group(1),
             "لغو شد",
             admin_id
         )
-
         return True
 
     return False
 
 
 def handle(m):
-
     if not m:
         return
 
     uid=str(
-        getattr(
-            m,
-            "chat_id",
-            ""
-        ) or ""
+        getattr(m,"chat_id","") or ""
     )
 
     sid=str(
-        getattr(
-            m,
-            "sender_id",
-            ""
-        ) or ""
+        getattr(m,"sender_id","") or ""
     )
 
     text=(
-        getattr(
-            m,
-            "text",
-            ""
-        ) or ""
+        getattr(m,"text","") or ""
     ).strip()
 
     print(
@@ -834,32 +748,15 @@ def handle(m):
     )
 
     if is_admin(m):
-
-        if admin_command(
-            text,
-            uid
-        ):
-            return
-
-        if text=="🏠 اصلی":
-
-            start(m)
+        if admin_command(text,uid):
             return
 
     if text.startswith("/start"):
-
         start(m)
         return
 
-    if text in (
-        "❌ خروج",
-        "❌ لغو"
-    ):
-
-        for key,o in list(
-            ORDERS.items()
-        ):
-
+    if text in ("❌ خروج","❌ لغو"):
+        for key,o in list(ORDERS.items()):
             if (
                 str(o.get("chat_id"))==uid
                 and (
@@ -867,30 +764,21 @@ def handle(m):
                     or o.get("discount_wait")
                 )
             ):
-
                 del ORDERS[key]
 
         save_orders()
-
-        send(
-            uid,
-            "✅ لغو شد."
-        )
-
+        send(uid,"✅ لغو شد.")
         return
 
     if text=="🛍 خدمات":
-
         send(
             uid,
             "🛍 خدمات روبیکا",
             SERV
         )
-
         return
 
     if text=="ℹ️ توضیحات":
-
         send(
             uid,
             "ℹ️ خدمات دارای پشتیبانی هستند.",
@@ -899,56 +787,46 @@ def handle(m):
                 [("🏠 اصلی","home")]
             ])
         )
-
         return
 
     if text=="🛒 خرید":
-
         send(
             uid,
             "🛍 خدمات",
             SERV
         )
-
         return
 
     if text=="📣 کانال":
-
         show_prices(
             uid,
             CHANNEL,
             "📣 ",
             "📣 تعرفه کانال"
         )
-
         return
 
     if text=="👥 گروه":
-
         show_prices(
             uid,
             CHANNEL,
             "👥 ",
             "👥 تعرفه گروه"
         )
-
         return
 
     if text=="⭐ فالور":
-
         show_prices(
             uid,
             FOLLOWERS,
             "⭐ ",
             "⭐ تعرفه فالور"
         )
-
         return
 
     price=extract_price(text)
 
     if price:
-
         typ,service,amount=price
 
         create_order(
@@ -957,52 +835,31 @@ def handle(m):
             amount,
             typ
         )
-
         return
 
     o=last_order(uid)
 
     if text=="❌ ندارم":
-
         if o and o.get("discount_wait"):
-
             o["discount_wait"]=0
             o["final"]=num(o["price"])
-
             save_orders()
-
-            payment(
-                uid,
-                o
-            )
-
+            payment(uid,o)
         return
 
     if is_media(m):
-
         receipt(m)
         return
 
     if o and o.get("discount_wait"):
-
-        discount(
-            m,
-            text
-        )
-
+        discount(m,text)
         return
 
     if o and o.get("waiting"):
-
-        set_target(
-            m,
-            text
-        )
-
+        set_target(m,text)
         return
 
     if text=="📦 پیگیری":
-
         orders=[
             o for o in get_user_orders(uid)
             if o.get("status")=="در حال انجام"
@@ -1021,11 +878,9 @@ def handle(m):
                 or "📭 ندارد."
             )
         )
-
         return
 
     if text=="🧾 سفارش‌ها":
-
         orders=sorted(
             get_user_orders(uid),
             key=oid,
@@ -1045,11 +900,9 @@ def handle(m):
                 or "📭 ندارد."
             )
         )
-
         return
 
     if text=="📜 قوانین":
-
         send(
             uid,
             "📜 قوانین:\n"
@@ -1057,21 +910,17 @@ def handle(m):
             "2️⃣ مقصد عمومی باشد.\n"
             "3️⃣ پس از پرداخت رسید ارسال شود."
         )
-
         return
 
     if text=="📞 پشتیبانی":
-
-        send(
-            uid,
-            SUPPORT
-        )
-
+        send(uid,SUPPORT)
         return
 
     if text=="🏠 اصلی":
-
         start(m)
+        return
+
+    if is_admin(m):
         return
 
     send(
@@ -1081,178 +930,188 @@ def handle(m):
 
 
 def process_update(item):
-
     try:
-
-        m=updates.Update(
-            item
-        ).to_message()
+        m=updates.Update(item).to_message()
 
         if m:
             handle(m)
 
     except Exception as e:
-
         print(
             "UPDATE:",
             repr(e)
         )
 
 
-def get_updates(offset=""):
+def api_updates(offset=""):
+    params={
+        "limit":POLL_LIMIT
+    }
 
-    try:
+    if offset:
+        params["offset_id"]=offset
 
-        params={
-            "limit":100
-        }
+    r=http.post(
+        f"{API}/getUpdates",
+        json=params,
+        timeout=REQUEST_TIMEOUT
+    )
 
-        if offset:
-            params["offset_id"]=str(offset)
-
-        r=http.post(
-            f"{bot.BASE_URL}/getUpdates",
-            json=params,
-            timeout=(3,15)
+    if r.status_code!=200:
+        raise RuntimeError(
+            f"HTTP {r.status_code}"
         )
 
-        if r.status_code!=200:
+    data=r.json()
+
+    if not isinstance(data,dict):
+        raise RuntimeError(
+            "INVALID_JSON"
+        )
+
+    if data.get("status")!="OK":
+        raise RuntimeError(
+            str(data.get("status_det") or data)
+        )
+
+    x=data.get("data") or {}
+
+    if not isinstance(x,dict):
+        raise RuntimeError(
+            "INVALID_DATA"
+        )
+
+    arr=x.get("updates") or []
+    new_offset=x.get("next_offset_id") or offset
+
+    return arr,new_offset
+
+
+def clear_old_updates():
+    print("CLEARING OLD UPDATES...")
+
+    offset=read(OF,"")
+
+    if not valid_offset(offset):
+        offset=""
+
+    loops=0
+
+        while loops<1000:
+        loops+=1
+
+        try:
+            arr,new_offset=api_updates(offset)
+
+            if new_offset and new_offset!=offset:
+                offset=new_offset
+                write(OF,offset)
+
+            if not arr:
+                break
 
             print(
-                "HTTP:",
-                r.status_code
+                "OLD UPDATES SKIPPED:",
+                len(arr)
             )
 
-            return [],offset
+            if not new_offset or new_offset==offset and not arr:
+                break
 
-        data=r.json()
+            time.sleep(.05)
 
-        if data.get("status")!="OK":
-
+        except Exception as e:
             print(
-                "API:",
-                data.get("status_det")
+                "CLEAR ERROR:",
+                repr(e)
             )
+            break
 
-            return [],offset
+    if offset:
+        write(OF,offset)
 
-        x=data.get("data") or {}
+    write(
+        READY,
+        str(int(time.time()))
+    )
 
-        arr=x.get("updates") or []
-
-        new_offset=(
-            x.get("next_offset_id")
-            or offset
-        )
-
-        return (
-            arr,
-            str(new_offset)
-        )
-
-    except Exception as e:
-
-        print(
-            "GET_UPDATES:",
-            repr(e)
-        )
-
-        return [],offset
+    print("OLD UPDATES CLEARED")
 
 
 def polling():
-
     print("BOT STARTED")
     print(
         "ADMINS:",
         ",".join(ADMINS)
     )
 
-    offset=read(
-        OF,
-        ""
-    )
+    first_run=not os.path.exists(READY)
+    offset=read(OF,"")
 
-    # اولین اجرا:
-    # تمام آپدیت‌های قبلی رد می‌شوند
-    # و هیچ‌کدام به handle ارسال نمی‌شوند.
-    if not offset:
-
-        print(
-            "SKIPPING OLD UPDATES..."
-        )
-
-        while True:
-
-            try:
-
-                arr,new_offset=get_updates("")
-
-                if new_offset:
-
-                    offset=str(new_offset)
-
-                    write(
-                        OF,
-                        offset
-                    )
-
-                if not arr:
-                    break
-
-            except Exception as e:
-
-                print(
-                    "SKIP OLD:",
-                    repr(e)
-                )
-
-                time.sleep(2)
-
-        print(
-            "OLD UPDATES SKIPPED"
-        )
-
-    else:
-
-        print(
-            "RESUMING OFFSET:",
-            offset
-        )
-
-    print(
-        "WAITING FOR NEW MESSAGES..."
-    )
-
-    while True:
+    if not valid_offset(offset):
+        print("OFFSET INVALID")
+        offset=""
 
         try:
+            os.remove(OF)
+        except:
+            pass
 
-            arr,new_offset=get_updates(
-                offset
-            )
+    if first_run or not offset:
+        clear_old_updates()
+        offset=read(OF,"")
 
-            # قبل از پردازش ذخیره می‌شود
-            # تا بعد از Restart دوباره پردازش نشود.
-            if (
-                new_offset
-                and str(new_offset)!=str(offset)
-            ):
+    print("WAITING FOR NEW MESSAGES...")
 
-                offset=str(new_offset)
+    backoff=BACKOFF_MIN
 
-                write(
-                    OF,
-                    offset
-                )
+    while True:
+        try:
+            arr,new_offset=api_updates(offset)
 
-            for item in arr:
+            backoff=BACKOFF_MIN
 
-                process_update(item)
+            if new_offset and new_offset!=offset:
+                offset=new_offset
 
             if not arr:
+                time.sleep(.3)
+                continue
 
-                time.sleep(0.5)
+            for item in arr:
+                try:
+                    process_update(item)
+                except Exception as e:
+                    print(
+                        "PROCESS ERROR:",
+                        repr(e)
+                    )
+
+            if new_offset:
+                write(
+                    OF,
+                    new_offset
+                )
+                offset=new_offset
+
+        except (
+            requests.exceptions.Timeout,
+            requests.exceptions.ConnectionError,
+            requests.exceptions.RequestException
+        ) as e:
+
+            print(
+                "NETWORK:",
+                repr(e),
+                "RETRY:",
+                backoff
+            )
+
+            time.sleep(backoff)
+            backoff=min(
+                backoff*2,
+                BACKOFF_MAX
+            )
 
         except exceptions.RubiBotAccessError as e:
 
@@ -1261,7 +1120,14 @@ def polling():
                 repr(e)
             )
 
-            time.sleep(3)
+            time.sleep(
+                min(backoff,10)
+            )
+
+            backoff=min(
+                backoff*2,
+                BACKOFF_MAX
+            )
 
         except Exception as e:
 
@@ -1270,13 +1136,17 @@ def polling():
                 repr(e)
             )
 
-            time.sleep(2)
+            time.sleep(backoff)
+
+            backoff=min(
+                backoff*2,
+                BACKOFF_MAX
+            )
 
 
 class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
-
         self.send_response(200)
 
         self.send_header(
@@ -1290,45 +1160,57 @@ class Handler(BaseHTTPRequestHandler):
             b"OK"
         )
 
-    def log_message(
-        self,
-        *args
-    ):
+    def do_HEAD(self):
+        self.send_response(200)
+        self.end_headers()
+
+    def log_message(self,*args):
         pass
 
 
 def web_server():
+    while True:
+        try:
+            server=HTTPServer(
+                ("0.0.0.0",PORT),
+                Handler
+            )
 
-    try:
-
-        server=HTTPServer(
-            (
-                "0.0.0.0",
+            print(
+                "WEB:",
                 PORT
-            ),
-            Handler
-        )
+            )
 
-        print(
-            "WEB:",
-            PORT
-        )
+            server.serve_forever()
 
-        server.serve_forever()
+        except Exception as e:
 
-    except Exception as e:
+            print(
+                "WEB ERROR:",
+                repr(e)
+            )
 
-        print(
-            "WEB ERROR:",
-            repr(e)
-        )
+            time.sleep(5)
 
 
-if __name__=="__main__":
-
+def main():
     Thread(
         target=web_server,
         daemon=True
     ).start()
 
     polling()
+
+
+if __name__=="__main__":
+    while True:
+        try:
+            main()
+        except KeyboardInterrupt:
+            break
+        except Exception as e:
+            print(
+                "FATAL:",
+                repr(e)
+            )
+            time.sleep(5)
