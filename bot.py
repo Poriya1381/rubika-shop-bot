@@ -1,10 +1,10 @@
 from rubibot import RubiBot,types,updates,exceptions
-import os,time,json,re,requests
+import os,time,json,re,requests,sys
 from threading import Thread
 from http.server import BaseHTTPRequestHandler,HTTPServer
 
-TOKEN=os.getenv("TOKEN","CDBECG0HQBJVRMBNGUWWXVCPLCHUIYZISYNGPQPKQQAEKZNLVFFWFTUUUJKHLCDZ")
-ADMIN="b0KYDRB0Ls0d5ad48d891eca78ebfa"
+TOKEN=os.getenv("TOKEN","")
+ADMIN=os.getenv("ADMIN","b0KYDRB0Ls0d5ad48d891eca78ebfa")
 CARD="6219861932569709"
 SUPPORT="@Poriysmeii"
 CODE="@PoriyBot"
@@ -16,11 +16,15 @@ os.makedirs(BASE,exist_ok=True)
 OF=f"{BASE}/offset.txt"
 DF=f"{BASE}/orders.json"
 
+RESTART_AFTER=600
+
 if not TOKEN:
     raise RuntimeError("TOKEN environment variable is not set")
 
 bot=RubiBot(TOKEN)
 http=requests.Session()
+
+last_activity=time.time()
 
 def read(path,default=""):
     try:
@@ -32,22 +36,28 @@ def read(path,default=""):
 def write(path,value):
     try:
         tmp=path+".tmp"
+
         with open(tmp,"w",encoding="utf-8") as f:
             f.write(str(value))
+
         os.replace(tmp,path)
+
     except Exception as e:
         print("WRITE:",repr(e))
 
 try:
     ORDERS=json.loads(read(DF,"{}"))
+
     if not isinstance(ORDERS,dict):
         ORDERS={}
+
 except:
     ORDERS={}
 
 def save_orders():
     try:
         tmp=DF+".tmp"
+
         with open(tmp,"w",encoding="utf-8") as f:
             json.dump(
                 ORDERS,
@@ -55,7 +65,9 @@ def save_orders():
                 ensure_ascii=False,
                 separators=(",",":")
             )
+
         os.replace(tmp,DF)
+
     except Exception as e:
         print("SAVE:",repr(e))
 
@@ -68,7 +80,34 @@ def reconnect():
         pass
 
     http=requests.Session()
+
     print("RUBIKA CONNECTION RESTARTED")
+
+def restart_bot():
+    global http
+
+    print("WATCHDOG: RESTARTING BOT")
+
+    try:
+        http.close()
+    except:
+        pass
+
+    time.sleep(1)
+
+    os.execv(
+        sys.executable,
+        [sys.executable]+sys.argv
+    )
+
+def watchdog():
+    started=time.time()
+
+    while True:
+        time.sleep(10)
+
+        if time.time()-started>=RESTART_AFTER:
+            restart_bot()
 
 def oid(o):
     try:
@@ -98,7 +137,12 @@ def kb(rows):
         r=types.KeypadRow()
 
         for text,data in row:
-            r.add(types.KeypadSimpleButton(text,data))
+            r.add(
+                types.KeypadSimpleButton(
+                    text,
+                    data
+                )
+            )
 
         k.add(r)
 
@@ -148,8 +192,11 @@ def send(uid,text,key=MAIN):
             text,
             chat_keypad=key
         )
+        return True
+
     except Exception as e:
         print("SEND:",repr(e))
+        return False
 
 def start(m):
     send(
@@ -165,15 +212,27 @@ def get_user_orders(uid):
 
 def last_order(uid):
     a=get_user_orders(uid)
-    return max(a,key=oid) if a else None
+
+    return max(
+        a,
+        key=oid
+    ) if a else None
 
 def get_username(m):
     try:
-        c=bot.get_chat(str(m.chat_id))
-        u=getattr(c,"username",None)
+        c=bot.get_chat(
+            str(m.chat_id)
+        )
+
+        u=getattr(
+            c,
+            "username",
+            None
+        )
 
         if u:
             return "@"+str(u).lstrip("@")
+
     except:
         pass
 
@@ -212,7 +271,11 @@ def show_prices(uid,items,prefix,title):
         ("🏠 اصلی","home")
     ])
 
-    send(uid,title,kb(rows))
+    send(
+        uid,
+        title,
+        kb(rows)
+    )
 
 def extract_price(text):
     m=re.search(
@@ -225,14 +288,18 @@ def extract_price(text):
 
     count=m.group(1)
     price=m.group(2)
+
     text=text.strip()
 
     if text.startswith("📣"):
         typ="کانال"
+
     elif text.startswith("👥"):
         typ="گروه"
+
     elif text.startswith("⭐"):
         typ="روبینو"
+
     else:
         return None
 
@@ -241,14 +308,22 @@ def extract_price(text):
 def create_order(m,service,price,typ):
     uid=str(m.chat_id)
 
-    ids=[oid(o) for o in ORDERS.values()]
+    ids=[
+        oid(o)
+        for o in ORDERS.values()
+    ]
+
     n=max(ids+[1000])+1
 
     ORDERS[str(n)]={
         "id":n,
         "chat_id":uid,
         "sender_id":str(
-            getattr(m,"sender_id","") or uid
+            getattr(
+                m,
+                "sender_id",
+                ""
+            ) or uid
         ),
         "username":get_username(m),
         "service":service,
@@ -266,7 +341,10 @@ def create_order(m,service,price,typ):
 
     save_orders()
 
-    print("ORDER CREATED:",n)
+    print(
+        "ORDER CREATED:",
+        n
+    )
 
     send(
         uid,
@@ -301,6 +379,7 @@ def payment(uid,o):
 
 def set_target(m,text):
     uid=str(m.chat_id)
+
     o=last_order(uid)
 
     if not o or not o.get("waiting"):
@@ -337,12 +416,14 @@ def set_target(m,text):
 
 def discount(m,text):
     uid=str(m.chat_id)
+
     o=last_order(uid)
 
     if not o:
         return
 
     if text.strip().lower()!=CODE.lower():
+
         send(
             uid,
             "❌ کد تخفیف نامعتبر است.",
@@ -351,9 +432,11 @@ def discount(m,text):
                 [("❌ خروج","cancel")]
             ])
         )
+
         return
 
     price=num(o["price"])
+
     off=price*20//100
 
     o["discount"]=off
@@ -361,7 +444,11 @@ def discount(m,text):
     o["discount_wait"]=0
 
     save_orders()
-    payment(uid,o)
+
+    payment(
+        uid,
+        o
+    )
 
 def is_media(m):
     return bool(
@@ -372,20 +459,31 @@ def is_media(m):
 
 def receipt(m):
     uid=str(m.chat_id)
+
     o=last_order(uid)
 
     if not o:
-        send(uid,"❌ سفارش ندارید.")
+        send(
+            uid,
+            "❌ سفارش ندارید."
+        )
         return
 
     if o.get("receipt"):
-        send(uid,"⚠️ رسید قبلاً ارسال شده.")
+        send(
+            uid,
+            "⚠️ رسید قبلاً ارسال شده."
+        )
         return
 
     path=f"{BASE}/receipt_{o['id']}.jpg"
 
     try:
-        f=getattr(m,"file",None)
+        f=getattr(
+            m,
+            "file",
+            None
+        )
 
         fid=(
             getattr(f,"id",None)
@@ -395,12 +493,17 @@ def receipt(m):
         if not fid:
             raise Exception("NO_FILE")
 
-        data=bot.download_file(bot.get_file(fid))
+        data=bot.download_file(
+            bot.get_file(fid)
+        )
 
         if not data:
             raise Exception("NO_DATA")
 
-        with open(path,"wb") as fp:
+        with open(
+            path,
+            "wb"
+        ) as fp:
             fp.write(data)
 
         text=(
@@ -412,7 +515,11 @@ def receipt(m):
             f"👤 {o['username']}"
         )
 
-        with open(path,"rb") as fp:
+        with open(
+            path,
+            "rb"
+        ) as fp:
+
             bot.send_photo(
                 ADMIN,
                 fp,
@@ -420,6 +527,7 @@ def receipt(m):
             )
 
         o["receipt"]=1
+
         save_orders()
 
         send(
@@ -429,7 +537,11 @@ def receipt(m):
         )
 
     except Exception as e:
-        print("RECEIPT:",repr(e))
+
+        print(
+            "RECEIPT:",
+            repr(e)
+        )
 
         send(
             uid,
@@ -437,6 +549,7 @@ def receipt(m):
         )
 
     finally:
+
         try:
             os.remove(path)
         except:
@@ -453,15 +566,19 @@ def admin_buttons(o):
     n=o["id"]
 
     if o["status"]=="در انتظار بررسی":
+
         return kb([
             [
                 (f"🔵 شروع #{n}","start"),
                 (f"🟢 تکمیل #{n}","done")
             ],
-            [(f"🔴 لغو #{n}","cancel")]
+            [
+                (f"🔴 لغو #{n}","cancel")
+            ]
         ])
 
     if o["status"]=="در حال انجام":
+
         return kb([
             [
                 (f"🟢 تکمیل #{n}","done"),
@@ -472,6 +589,7 @@ def admin_buttons(o):
     return ADMIN_KB
 
 def admin_list(status):
+
     orders=sorted(
         [
             o for o in ORDERS.values()
@@ -482,14 +600,17 @@ def admin_list(status):
     )
 
     if not orders:
+
         send(
             ADMIN,
             "📭 سفارشی نیست.",
             ADMIN_KB
         )
+
         return
 
     for o in orders[:30]:
+
         send(
             ADMIN,
             f"""📦 سفارش #{o["id"]}
@@ -504,6 +625,7 @@ def admin_list(status):
         )
 
 def change_status(order_id,status):
+
     o=next(
         (
             x for x in ORDERS.values()
@@ -513,11 +635,13 @@ def change_status(order_id,status):
     )
 
     if not o:
+
         send(
             ADMIN,
             f"❌ سفارش #{order_id} پیدا نشد.",
             ADMIN_KB
         )
+
         return
 
     o["status"]=status
@@ -539,19 +663,27 @@ def change_status(order_id,status):
     )
 
 def admin_command(text):
+
     if text=="/admin":
+
         send(
             ADMIN,
             "⚙️ پنل مدیریت",
             ADMIN_KB
         )
+
         return True
 
     if text in STATUS:
-        admin_list(STATUS[text])
+
+        admin_list(
+            STATUS[text]
+        )
+
         return True
 
     if text=="🗑 حذف لغوشده":
+
         keys=[
             k for k,o in ORDERS.items()
             if o.get("status")=="لغو شد"
@@ -567,6 +699,7 @@ def admin_command(text):
             f"🗑 {len(keys)} سفارش حذف شد.",
             ADMIN_KB
         )
+
         return True
 
     m=re.match(
@@ -575,6 +708,7 @@ def admin_command(text):
     )
 
     if m:
+
         action,number=m.groups()
 
         status={
@@ -583,50 +717,76 @@ def admin_command(text):
             "🔴 لغو":"لغو شد"
         }[action]
 
-        change_status(number,status)
+        change_status(
+            number,
+            status
+        )
+
         return True
 
     return False
 
 def handle(m):
+
     if not m:
         return
 
     uid=str(m.chat_id)
 
     sid=str(
-        getattr(m,"sender_id","") or ""
+        getattr(
+            m,
+            "sender_id",
+            ""
+        ) or ""
     )
 
     text=(
-        getattr(m,"text","")
-        or ""
+        getattr(
+            m,
+            "text",
+            ""
+        ) or ""
     ).strip()
 
     if text=="/admin":
+
         if uid==ADMIN or sid==ADMIN:
+
             send(
                 uid,
                 "⚙️ پنل مدیریت",
                 ADMIN_KB
             )
+
         else:
+
             send(
                 uid,
                 "❌ شما دسترسی ادمین ندارید."
             )
+
         return
 
     if uid==ADMIN or sid==ADMIN:
+
         if admin_command(text):
             return
 
     if text.startswith("/start"):
+
         start(m)
         return
 
-    if text in ("❌ خروج","❌ لغو"):
-        for key,o in list(ORDERS.items()):
+    if text in (
+        "❌ خروج",
+        "❌ لغو"
+    ):
+
+        for key,o in list(
+            ORDERS.items()
+        ):
+
             if (
                 str(o.get("chat_id"))==uid
                 and (
@@ -637,18 +797,26 @@ def handle(m):
                 del ORDERS[key]
 
         save_orders()
-        send(uid,"✅ لغو شد.")
+
+        send(
+            uid,
+            "✅ لغو شد."
+        )
+
         return
 
     if text=="🛍 خدمات":
+
         send(
             uid,
             "🛍 خدمات روبیکا",
             SERV
         )
+
         return
 
     if text=="ℹ️ توضیحات":
+
         send(
             uid,
             "ℹ️ خدمات دارای پشتیبانی هستند.",
@@ -657,46 +825,56 @@ def handle(m):
                 [("🏠 اصلی","home")]
             ])
         )
+
         return
 
     if text=="🛒 خرید":
+
         send(
             uid,
             "🛍 خدمات",
             SERV
         )
+
         return
 
     if text=="📣 کانال":
+
         show_prices(
             uid,
             CHANNEL,
             "📣 ",
             "📣 تعرفه کانال"
         )
+
         return
 
     if text=="👥 گروه":
+
         show_prices(
             uid,
             CHANNEL,
             "👥 ",
             "👥 تعرفه گروه"
         )
+
         return
 
     if text=="⭐ فالور":
+
         show_prices(
             uid,
             FOLLOWERS,
             "⭐ ",
             "⭐ تعرفه فالور"
         )
+
         return
 
     price=extract_price(text)
 
     if price:
+
         typ,service,amount=price
 
         create_order(
@@ -705,33 +883,52 @@ def handle(m):
             amount,
             typ
         )
+
         return
 
     o=last_order(uid)
 
     if text=="❌ ندارم":
+
         if o and o.get("discount_wait"):
+
             o["discount_wait"]=0
             o["final"]=num(o["price"])
 
             save_orders()
-            payment(uid,o)
+
+            payment(
+                uid,
+                o
+            )
 
         return
 
     if is_media(m):
+
         receipt(m)
         return
 
     if o and o.get("discount_wait"):
-        discount(m,text)
+
+        discount(
+            m,
+            text
+        )
+
         return
 
     if o and o.get("waiting"):
-        set_target(m,text)
+
+        set_target(
+            m,
+            text
+        )
+
         return
 
     if text=="📦 پیگیری":
+
         orders=[
             o for o in get_user_orders(uid)
             if o.get("status")=="در حال انجام"
@@ -750,9 +947,11 @@ def handle(m):
                 or "📭 ندارد."
             )
         )
+
         return
 
     if text=="🧾 سفارش‌ها":
+
         orders=sorted(
             get_user_orders(uid),
             key=oid,
@@ -772,9 +971,11 @@ def handle(m):
                 or "📭 ندارد."
             )
         )
+
         return
 
     if text=="📜 قوانین":
+
         send(
             uid,
             "📜 قوانین:\n"
@@ -782,13 +983,20 @@ def handle(m):
             "2️⃣ مقصد عمومی باشد.\n"
             "3️⃣ پس از پرداخت رسید ارسال شود."
         )
+
         return
 
     if text=="📞 پشتیبانی":
-        send(uid,SUPPORT)
+
+        send(
+            uid,
+            SUPPORT
+        )
+
         return
 
     if text=="🏠 اصلی":
+
         start(m)
         return
 
@@ -798,10 +1006,14 @@ def handle(m):
     )
 
 def get_updates(offset=""):
-    global http
+
+    global http,last_activity
 
     try:
-        params={"limit":100}
+
+        params={
+            "limit":100
+        }
 
         if offset:
             params["offset_id"]=offset
@@ -812,14 +1024,28 @@ def get_updates(offset=""):
             timeout=(3,10)
         )
 
+        last_activity=time.time()
+
         if r.status_code!=200:
-            print("HTTP:",r.status_code)
+
+            print(
+                "HTTP:",
+                r.status_code
+            )
+
             reconnect()
+
             return [],offset
 
         data=r.json()
 
         if data.get("status")!="OK":
+
+            print(
+                "API STATUS:",
+                data.get("status_det")
+            )
+
             return [],offset
 
         x=data.get("data") or {}
@@ -836,73 +1062,138 @@ def get_updates(offset=""):
         OSError
     ) as e:
 
-        print("NETWORK:",repr(e))
+        print(
+            "NETWORK:",
+            repr(e)
+        )
+
         reconnect()
+
+        last_activity=time.time()
+
         return [],offset
 
     except Exception as e:
-        print("GET:",repr(e))
+
+        print(
+            "GET:",
+            repr(e)
+        )
+
         reconnect()
+
+        last_activity=time.time()
+
         return [],offset
 
 def clear_old():
+
     offset=read(OF)
 
     if offset:
         return offset
 
-    print("CLEAR OLD UPDATES")
+    print(
+        "CLEAR OLD UPDATES"
+    )
 
     empty=0
 
     while empty<2:
-        arr,no=get_updates(offset)
+
+        arr,no=get_updates(
+            offset
+        )
 
         if no and no!=offset:
+
             offset=no
-            write(OF,offset)
+
+            write(
+                OF,
+                offset
+            )
 
         if not arr:
             empty+=1
         else:
             empty=0
 
-    print("OLD UPDATES CLEARED")
+    print(
+        "OLD UPDATES CLEARED"
+    )
 
     return offset
 
 def polling():
+
+    global last_activity
+
     offset=clear_old()
 
     while True:
+
         try:
-            arr,no=get_updates(offset)
+
+            last_activity=time.time()
+
+            arr,no=get_updates(
+                offset
+            )
+
+            last_activity=time.time()
 
             if no and no!=offset:
+
                 offset=no
-                write(OF,offset)
+
+                write(
+                    OF,
+                    offset
+                )
 
             for item in arr:
+
                 try:
-                    m=updates.Update(item).to_message()
+
+                    last_activity=time.time()
+
+                    m=updates.Update(
+                        item
+                    ).to_message()
 
                     if m:
                         handle(m)
 
+                    last_activity=time.time()
+
                 except Exception as e:
-                    print("UPDATE:",repr(e))
+
+                    print(
+                        "UPDATE:",
+                        repr(e)
+                    )
 
             if not arr:
+
                 time.sleep(.2)
 
         except exceptions.RubiBotAccessError:
-            print("ACCESS ERROR - RECONNECTING")
+
+            print(
+                "ACCESS ERROR - RECONNECTING"
+            )
+
             reconnect()
+
+            last_activity=time.time()
+
             time.sleep(3)
 
         except (
             requests.exceptions.ConnectionError,
             requests.exceptions.Timeout,
+            requests.exceptions.ChunkedEncodingError,
             OSError
         ) as e:
 
@@ -914,42 +1205,167 @@ def polling():
             return
 
         except Exception as e:
+
             print("POLLING ERROR:",repr(e))
             reconnect()
             time.sleep(3)
 
+
 class Health(BaseHTTPRequestHandler):
+
     def do_GET(self):
+
         self.send_response(200)
-        self.send_header("Content-Type","text/plain")
+        self.send_header(
+            "Content-Type",
+            "text/plain; charset=utf-8"
+        )
         self.end_headers()
+
         self.wfile.write(b"OK")
 
     def log_message(self,*args):
         pass
 
+
 def web():
+
     while True:
+
         try:
-            HTTPServer(
+
+            server=HTTPServer(
                 ("0.0.0.0",PORT),
                 Health
-            ).serve_forever()
+            )
+
+            print(
+                f"WEB SERVER STARTED ON PORT {PORT}"
+            )
+
+            server.serve_forever()
 
         except Exception as e:
-            print("WEB:",repr(e))
+
+            print(
+                "WEB ERROR:",
+                repr(e)
+            )
+
             time.sleep(2)
 
+
+# ============================================
+# ری‌استارت اتصال روبیکا هر 10 دقیقه
+# ============================================
+
+RECONNECT_INTERVAL=10*60
+
+
+def auto_reconnect():
+
+    while True:
+
+        try:
+
+            time.sleep(RECONNECT_INTERVAL)
+
+            print(
+                "\n================================"
+            )
+
+            print(
+                "10 MINUTES PASSED"
+            )
+
+            print(
+                "RESTARTING RUBIKA CONNECTION..."
+            )
+
+            reconnect()
+
+            print(
+                "RUBIKA CONNECTION RESTARTED"
+            )
+
+            print(
+                "================================\n"
+            )
+
+        except Exception as e:
+
+            print(
+                "AUTO RECONNECT ERROR:",
+                repr(e)
+            )
+
+            time.sleep(5)
+
+
 if __name__=="__main__":
+
     Thread(
         target=web,
         daemon=True
     ).start()
 
-    print("================================")
-    print("RUBIKA BOT STARTED")
-    print("PORT:",PORT)
-    print("ORDERS:",len(ORDERS))
-    print("================================")
+    Thread(
+        target=auto_reconnect,
+        daemon=True
+    ).start()
 
-    polling()
+    print(
+        "================================"
+    )
+
+    print(
+        "RUBIKA BOT STARTED"
+    )
+
+    print(
+        "PORT:",
+        PORT
+    )
+
+    print(
+        "ORDERS:",
+        len(ORDERS)
+    )
+
+    print(
+        "AUTO RECONNECT:",
+        "10 MINUTES"
+    )
+
+    print(
+        "================================"
+    )
+
+    while True:
+
+        try:
+
+            polling()
+
+        except KeyboardInterrupt:
+
+            print(
+                "BOT STOPPED"
+            )
+
+            break
+
+        except Exception as e:
+
+            print(
+                "BOT CRASH:",
+                repr(e)
+            )
+
+            print(
+                "RESTARTING POLLING..."
+            )
+
+            reconnect()
+
+            time.sleep(3)
