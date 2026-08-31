@@ -21,16 +21,6 @@ if not TOKEN:
 
 bot=RubiBot(TOKEN)
 
-def new_session():
-    s=requests.Session()
-    s.headers.update({
-        "Connection":"keep-alive",
-        "User-Agent":"RubikaShopBot/1.0"
-    })
-    return s
-
-http=new_session()
-
 def read(path,default=""):
     try:
         with open(path,encoding="utf-8") as f:
@@ -59,7 +49,8 @@ def save():
         tmp=DF+".tmp"
         with open(tmp,"w",encoding="utf-8") as f:
             json.dump(
-                ORDERS,f,
+                ORDERS,
+                f,
                 ensure_ascii=False,
                 separators=(",",":")
             )
@@ -185,7 +176,8 @@ def normalize(text):
         r"https?://(?:www\.)?"
         r"(?:rubika\.ir|web\.rubika\.ir)/"
         r"([A-Za-z0-9_]{3,64})/?",
-        text,re.I
+        text,
+        re.I
     )
 
     if m:
@@ -232,9 +224,8 @@ def parse_price(text):
 def create_order(m,service,price,typ):
     uid=str(m.chat_id)
 
-    n=max(
-        [oid(o) for o in ORDERS.values()]+[1000]
-    )+1
+    ids=[oid(o) for o in ORDERS.values()]
+    n=max(ids+[1000])+1
 
     ORDERS[str(n)]={
         "id":n,
@@ -259,15 +250,14 @@ def create_order(m,service,price,typ):
 
     save()
 
-    print("ORDER:",n)
-
     send(
         uid,
         "📌 یوزرنیم مقصد را ارسال کنید.\n\n"
         "کانال، پیج یا گروه:\n"
         "@username\n\n"
         "مثال:\n"
-        "@Poriysmeii",
+        "@Poriysmeii\n\n"
+        "یا لینک روبیکا را ارسال کنید.",
         kb([
             [("❌ خروج","cancel")],
             [("🏠 اصلی","home")]
@@ -304,7 +294,10 @@ def set_target(m,text):
         send(
             uid,
             "❌ یوزرنیم نامعتبر است.\n\n"
-            "به شکل @username ارسال کنید."
+            "به این شکل ارسال کنید:\n"
+            "@username\n\n"
+            "مثال:\n"
+            "@Poriysmeii"
         )
         return
 
@@ -324,6 +317,15 @@ def set_target(m,text):
         ])
     )
 
+def discount_used(uid):
+    for o in ORDERS.values():
+        if (
+            str(o.get("chat_id"))==str(uid)
+            and o.get("discount_code")==CODE
+        ):
+            return True
+    return False
+
 def discount(m,text):
     uid=str(m.chat_id)
     o=last_order(uid)
@@ -331,9 +333,7 @@ def discount(m,text):
     if not o or not o.get("discount_wait"):
         return
 
-    code=text.strip().lower()
-
-    if code!=CODE.lower():
+    if text.strip().lower()!=CODE.lower():
         send(
             uid,
             "❌ کد تخفیف نامعتبر است.",
@@ -344,8 +344,15 @@ def discount(m,text):
         )
         return
 
-    if o.get("discount_code"):
-        send(uid,"⚠️ کد تخفیف این سفارش قبلاً ثبت شده.")
+    if discount_used(uid):
+        send(
+            uid,
+            "⚠️ این کد تخفیف قبلاً برای حساب شما استفاده شده است.",
+            kb([
+                [("❌ ندارم","no_discount")],
+                [("❌ خروج","cancel")]
+            ])
+        )
         return
 
     p=num(o["price"])
@@ -357,7 +364,6 @@ def discount(m,text):
     o["discount_wait"]=0
 
     save()
-
     payment(uid,o)
 
 def is_media(m):
@@ -408,7 +414,7 @@ def receipt(m):
             f"📌 {o['type']}\n"
             f"🔗 {o['target']}\n"
             f"💰 {money(o['final'])} تومان\n"
-            f"🎁 تخفیف: {money(o.get('discount',0))} تومان\n"
+            f"🎁 تخفیف: {money(o['discount'])} تومان\n"
             f"👤 {o['username']}"
         )
 
@@ -481,7 +487,11 @@ def admin_list(status):
     )
 
     if not a:
-        send(ADMIN,"📭 سفارشی نیست.",ADMIN_KB)
+        send(
+            ADMIN,
+            "📭 سفارشی نیست.",
+            ADMIN_KB
+        )
         return
 
     for o in a[:30]:
@@ -493,7 +503,6 @@ def admin_list(status):
 📌 {o["type"]}
 🔗 {o["target"] or "ثبت نشده"}
 💰 {money(o["final"])} تومان
-🎁 تخفیف: {money(o.get("discount",0))} تومان
 👤 {o["username"]}
 📊 {o["status"]}""",
             admin_buttons(o)
@@ -509,7 +518,11 @@ def change_status(n,status):
     )
 
     if not o:
-        send(ADMIN,f"❌ سفارش #{n} پیدا نشد.",ADMIN_KB)
+        send(
+            ADMIN,
+            f"❌ سفارش #{n} پیدا نشد.",
+            ADMIN_KB
+        )
         return
 
     o["status"]=status
@@ -531,7 +544,11 @@ def change_status(n,status):
 
 def admin_command(text):
     if text=="/admin":
-        send(ADMIN,"⚙️ پنل مدیریت",ADMIN_KB)
+        send(
+            ADMIN,
+            "⚙️ پنل مدیریت",
+            ADMIN_KB
+        )
         return True
 
     if text in STATUS:
@@ -548,6 +565,7 @@ def admin_command(text):
             del ORDERS[k]
 
         save()
+
         send(
             ADMIN,
             f"🗑 {len(keys)} سفارش حذف شد.",
@@ -579,6 +597,7 @@ def handle(m):
         return
 
     uid=str(m.chat_id)
+
     sid=str(
         getattr(m,"sender_id","") or ""
     )
@@ -592,7 +611,11 @@ def handle(m):
 
     if text=="/admin":
         if uid==ADMIN or sid==ADMIN:
-            send(uid,"⚙️ پنل مدیریت",ADMIN_KB)
+            send(
+                uid,
+                "⚙️ پنل مدیریت",
+                ADMIN_KB
+            )
         else:
             send(uid,"❌ شما دسترسی ادمین ندارید.")
         return
@@ -703,18 +726,25 @@ def handle(m):
     if text=="📦 پیگیری":
         a=[
             o for o in user_orders(uid)
-            if o.get("status")=="در حال انجام"
+            if o.get("status")!="تکمیل شد"
+            and o.get("status")!="لغو شد"
         ]
 
         send(
             uid,
-            "📦 سفارش‌های در حال انجام:\n\n"+
+            "📦 پیگیری سفارش‌ها:\n\n"+
             (
                 "\n".join(
-                    f"#{o['id']} | {o['service']}"
-                    for o in a
+                    f"#{o['id']} | "
+                    f"{o['service']} | "
+                    f"{o['status']}"
+                    for o in sorted(
+                        a,
+                        key=oid,
+                        reverse=True
+                    )
                 )
-                or "📭 ندارد."
+                or "📭 سفارشی در حال پیگیری نیست."
             )
         )
         return
@@ -736,7 +766,7 @@ def handle(m):
                     f"{o['status']}"
                     for o in a
                 )
-                or "📭 ندارد."
+                or "📭 سفارشی ثبت نشده."
             )
         )
         return
@@ -762,18 +792,16 @@ def handle(m):
     send(uid,"👇 از منو انتخاب کنید.")
 
 def get_updates(offset=""):
-    global http
-
     try:
         p={"limit":100}
 
         if offset:
             p["offset_id"]=offset
 
-        r=http.post(
+        r=requests.post(
             f"{bot.BASE_URL}/getUpdates",
             json=p,
-            timeout=(3,8)
+            timeout=(5,15)
         )
 
         if r.status_code!=200:
@@ -793,16 +821,12 @@ def get_updates(offset=""):
             data.get("next_offset_id") or offset
         )
 
-    except Exception as e:
+    except requests.RequestException as e:
         print("NETWORK:",repr(e))
+        return [],offset
 
-        try:
-            http.close()
-        except:
-            pass
-
-        http=new_session()
-
+    except Exception as e:
+        print("GET:",repr(e))
         return [],offset
 
 def clear_old():
@@ -813,7 +837,9 @@ def clear_old():
 
     print("CLEAR OLD UPDATES")
 
-    for _ in range(5):
+    empty=0
+
+    for _ in range(30):
         arr,no=get_updates(offset)
 
         if no and no!=offset:
@@ -821,15 +847,20 @@ def clear_old():
             write(OF,offset)
 
         if not arr:
-            break
+            empty+=1
+
+            if empty>=2:
+                break
+        else:
+            empty=0
+
+        time.sleep(.05)
 
     print("OLD UPDATES CLEARED")
-
     return offset
 
 def polling():
     offset=clear_old()
-    errors=0
 
     while True:
         try:
@@ -839,52 +870,36 @@ def polling():
                 offset=no
                 write(OF,offset)
 
-            if arr:
-                errors=0
+            for item in arr:
+                try:
+                    m=updates.Update(item).to_message()
 
-                for item in arr:
-                    try:
-                        m=updates.Update(item).to_message()
+                    if m:
+                        handle(m)
 
-                        if m:
-                            handle(m)
+                except Exception as e:
+                    print("UPDATE:",repr(e))
 
-                    except Exception as e:
-                        print("UPDATE:",repr(e))
-
-            else:
-                time.sleep(.10)
+            if not arr:
+                time.sleep(.1)
 
         except exceptions.RubiBotAccessError:
             print("ACCESS ERROR")
             time.sleep(5)
 
+        except requests.RequestException as e:
+            print("POLL NETWORK:",repr(e))
+            time.sleep(2)
+
         except KeyboardInterrupt:
+            print("BOT STOPPED")
             return
 
         except Exception as e:
-            errors+=1
-
-            print(
-                "MAIN:",
-                repr(e),
-                "ERRORS:",
-                errors
-            )
-
-            if errors>=3:
-                try:
-                    http.close()
-                except:
-                    pass
-
-                http=new_session()
-                errors=0
-
-            time.sleep(1)
+            print("POLLING:",repr(e))
+            time.sleep(2)
 
 class Health(BaseHTTPRequestHandler):
-
     def do_GET(self):
         self.send_response(200)
         self.send_header("Content-Type","text/plain")
@@ -901,8 +916,6 @@ def web():
                 ("0.0.0.0",PORT),
                 Health
             )
-
-            print("WEB SERVER:",PORT)
             server.serve_forever()
 
         except Exception as e:
@@ -910,7 +923,6 @@ def web():
             time.sleep(2)
 
 if __name__=="__main__":
-
     Thread(
         target=web,
         daemon=True
