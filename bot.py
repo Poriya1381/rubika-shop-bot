@@ -997,9 +997,9 @@ def clear_old_updates():
 
     loops=0
 
-        while loops<1000:
+    while loops<1000:
         loops+=1
-
+        
         try:
             arr,new_offset=api_updates(offset)
 
