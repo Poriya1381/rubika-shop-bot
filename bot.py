@@ -1709,7 +1709,7 @@ def web_server():
                 repr(e)
             )
 
-            time.sleep(2)
+            time.sleep(1)
 
 
 # =========================
@@ -1749,5 +1749,5 @@ if __name__ == "__main__":
                 repr(e)
             )
 
-            time.sleep(2)
+            time.sleep(1)
  
